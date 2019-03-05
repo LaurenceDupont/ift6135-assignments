@@ -249,11 +249,33 @@ class MultiHeadedAttention(nn.Module):
         # This requires the number of n_heads to evenly divide n_units.
         assert n_units % n_heads == 0
         self.n_units = n_units 
+        self.n_heads = n_heads
+        self.dropout = nn.Dropout(p=dropout)
+
+        self.fc_keys = nn.Linear(self.n_units, n_heads * self.d_k)
+        self.fc_values = nn.Linear(self.n_units, n_heads * self.d_k)
+        self.fc_query = nn.Linear(self.n_units, n_heads * self.d_k)
+        self.W_o = nn.Linear(n_units, n_units)
 
         # TODO: create/initialize any necessary parameters or layers
         # Note: the only Pytorch modules you are allowed to use are nn.Linear 
         # and nn.Dropout
+    def softmax(self, x, mask):
+        mask = mask.float()
+        x_tilde = (x * mask) - 1e9 * (1-mask)
+        x_tilde = torch.exp(x_tilde)
         
+        sumy = torch.sum(x_tilde)
+        if (sumy != sumy):
+            print("Hello there!")
+        return x_tilde/sumy
+
+    def attention(self, key, value, query, mask):
+        attention_values = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.d_k)
+        attention_values = self.softmax(attention_values, mask)
+        attention_values = self.dropout(attention_values)
+        return torch.matmul(attention_values, value)
+
     def forward(self, query, key, value, mask=None):
         # TODO: implement the masked multi-head attention.
         # query, key, and value all have size: (batch_size, seq_len, self.n_units, self.d_k)
@@ -261,8 +283,22 @@ class MultiHeadedAttention(nn.Module):
         # As described in the .tex, apply input masking to the softmax 
         # generating the "attention values" (i.e. A_i in the .tex)
         # Also apply dropout to the attention values.
+        batch_size = query.size(0)
+        seq_len = query.size(1)
+        # 1)
+        key = self.fc_keys(key)
+        value = self.fc_values(value)
+        query = self.fc_query(query)
 
-        return # size: (batch_size, seq_len, self.n_units)
+        # 2)
+        x = self.attention(key, value, query, mask)
+
+        # 3)
+        x = x.transpose(1, 2).contiguous().view(batch_size, seq_len, self.n_units) # Concat
+        output = self.W_o(x)
+
+
+        return output# size: (batch_size, seq_len, self.n_units)
 
 
 
@@ -280,6 +316,8 @@ class WordEmbedding(nn.Module):
 
     def forward(self, x):
         #print (x)
+        if (torch.sum(torch.isnan(self.lut(x))).item() > 0):
+            print("NAN!!")
         return self.lut(x) * math.sqrt(self.n_units)
 
 
