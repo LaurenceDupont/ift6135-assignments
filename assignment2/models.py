@@ -252,10 +252,12 @@ class MultiHeadedAttention(nn.Module):
         self.n_heads = n_heads
         self.dropout = nn.Dropout(p=dropout)
 
-        self.fc_keys = nn.Linear(self.n_units, n_heads * self.d_k)
-        self.fc_values = nn.Linear(self.n_units, n_heads * self.d_k)
-        self.fc_query = nn.Linear(self.n_units, n_heads * self.d_k)
-        self.W_o = nn.Linear(n_units, n_units)
+        self.linears = clones(nn.Linear(n_units, n_units), 4)
+
+        # self.fc_keys = nn.Linear(self.n_units, n_heads * self.d_k)
+        # self.fc_values = nn.Linear(self.n_units, n_heads * self.d_k)
+        # self.fc_query = nn.Linear(self.n_units, n_heads * self.d_k)
+        # self.W_o = nn.Linear(n_units, n_units)
 
         # TODO: create/initialize any necessary parameters or layers
         # Note: the only Pytorch modules you are allowed to use are nn.Linear 
@@ -263,6 +265,7 @@ class MultiHeadedAttention(nn.Module):
     def softmax(self, x, mask):
         mask = mask.float()
         x_tilde = (x * mask) - 1e9 * (1-mask)
+        x_tilde = x_tilde - torch.max(x)
         x_tilde = torch.exp(x_tilde)
         
         sumy = torch.sum(x_tilde)
@@ -270,15 +273,29 @@ class MultiHeadedAttention(nn.Module):
             print("Hello there!")
         return x_tilde/sumy
 
-    def attention(self, key, value, query, mask):
-        attention_values = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.d_k)
-        attention_values = self.softmax(attention_values, mask)
-        attention_values = self.dropout(attention_values)
-        return torch.matmul(attention_values, value)
+
+    def attention(self, key, query, value, mask=None, dropout=None):
+        "Compute 'Scaled Dot Product Attention'"
+        d_k = query.size(-1)
+        scores = torch.matmul(query, key.transpose(-2, -1)) \
+                / math.sqrt(d_k)
+        if mask is not None:
+            scores = scores.transpose(0,1).masked_fill(mask == 0, -1e9).transpose(0,1)
+        p_attn = F.softmax(scores, dim = -1)
+        # p_attn = self.softmax(scores, mask)
+        if dropout is not None:
+            p_attn = dropout(p_attn)
+        return torch.matmul(p_attn, value), p_attn
+
+    # def attention(self, key, value, query, mask):
+    #     attention_values = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.d_k)
+    #     attention_values = self.softmax(attention_values, mask)
+    #     attention_values = self.dropout(attention_values)
+    #     return torch.matmul(attention_values, value)
 
     def forward(self, query, key, value, mask=None):
         # TODO: implement the masked multi-head attention.
-        # query, key, and value all have size: (batch_size, seq_len, self.n_units, self.d_k)
+        # query, key, and value all have size: (batch_size, seq_len, self.n_units)
         # mask has size: (batch_size, seq_len, seq_len)
         # As described in the .tex, apply input masking to the softmax 
         # generating the "attention values" (i.e. A_i in the .tex)
@@ -286,16 +303,23 @@ class MultiHeadedAttention(nn.Module):
         batch_size = query.size(0)
         seq_len = query.size(1)
         # 1)
-        key = self.fc_keys(key)
-        value = self.fc_values(value)
-        query = self.fc_query(query)
+        # key = self.fc_keys(key)
+        # value = self.fc_values(value)
+        # query = self.fc_query(query)
+
+        query, key, value = \
+            [l(x).view(batch_size, seq_len, self.n_heads, self.d_k).transpose(1, 2)
+             for l, x in zip(self.linears, (query, key, value))]
 
         # 2)
-        x = self.attention(key, value, query, mask)
+        x, p_attn = self.attention(key, value, query, mask=mask, dropout=self.dropout)
 
         # 3)
-        x = x.transpose(1, 2).contiguous().view(batch_size, seq_len, self.n_units) # Concat
-        output = self.W_o(x)
+        x = x.transpose(1, 2).contiguous() \
+             .view(batch_size, -1, self.n_heads * self.d_k)
+        output = self.linears[-1](x)
+        #x = x.transpose(1, 2).contiguous().view(batch_size, seq_len, self.n_units) # Concat
+        #output = self.W_o(x)
 
 
         return output# size: (batch_size, seq_len, self.n_units)
