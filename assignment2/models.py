@@ -28,6 +28,15 @@ import matplotlib.pyplot as plt
 # except where indicated to implement the multi-head
 # attention. 
 
+device = None
+# Use the GPU if you have one
+if torch.cuda.is_available():
+    print("Using the GPU")
+    device = torch.device("cuda") 
+else:
+    print("WARNING: You are about to run on cpu, and this will likely run out \
+      of memory. \n You can try setting batch_size=1 to reduce memory usage")
+    device = torch.device("cpu")
 
 def clones(module, N):
     "A helper function for producing N identical layers (each with their own parameters)."
@@ -63,11 +72,48 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
         # for Pytorch to recognize these parameters as belonging to this nn.Module 
         # and compute their gradients automatically. You're not obligated to use the
         # provided clones function.
+        
+        self.emb_size = emb_size
+        self.hidden_size = hidden_size
+        self.seq_len = seq_len
+        self.vocab_size = vocab_size
+        self.batch_size = batch_size
+        self.num_layers = num_layers
+        
+        self.embedding = nn.Embedding(vocab_size, emb_size)
+        
+        W_x = []
+        W_x.append(nn.Linear(emb_size, hidden_size, bias=False)) # (emb_size, hidden_size) for the first layer
+        for layer_index in range(num_layers-1): # (hidden_size, hidden_size) for subsequent layers
+            W_x.append(copy.deepcopy(nn.Linear(hidden_size, hidden_size, bias=False)))
+        
+        self.W_x = nn.ModuleList(W_x)
+        
+        self.W_h = clones(nn.Linear(hidden_size, hidden_size), num_layers)
+        
+        self.dropout = nn.Dropout(p=1-dp_keep_prob)
+        self.tanh = nn.Tanh()
+        
+        self.W_y = nn.Linear(hidden_size, vocab_size)
+        
+        self.init_weights_uniform()
 
     def init_weights_uniform(self):
         # TODO ========================
         # Initialize all the weights uniformly in the range [-0.1, 0.1]
         # and all the biases to 0 (in place)
+        
+        a = -0.1
+        b = 0.1
+        
+        for layer_index in range(self.num_layers):
+            self.W_x[layer_index].weight = nn.init.uniform_(self.W_x[layer_index].weight, a, b)
+            self.W_h[layer_index].weight = nn.init.uniform_(self.W_h[layer_index].weight, a, b)
+            self.W_h[layer_index].bias.data.fill_(0)
+        
+        self.W_y.weight = nn.init.uniform_(self.W_y.weight, a, b)
+        self.W_y.bias.data.fill_(0)
+        
         return
 
     def init_hidden(self):
@@ -76,7 +122,7 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
         """
         This is used for the first mini-batch in an epoch, only.
         """
-        return # a parameter tensor of shape (self.num_layers, self.batch_size, self.hidden_size)
+        return torch.zeros(self.num_layers, self.batch_size, self.hidden_size).to(device) # a parameter tensor of shape (self.num_layers, self.batch_size, self.hidden_size)
 
     def forward(self, inputs, hidden):
         # TODO ========================
@@ -114,7 +160,49 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
                   if you are curious.
                         shape: (num_layers, batch_size, hidden_size)
         """
-        return logits.view(self.seq_len, self.batch_size, self.vocab_size), hidden
+
+        """
+        From the forum:
+        
+        Only apply dropout "up the stack" not "forward through time"
+        
+        In short, the dropout is applied to the hidden activations before they are treated as input in the next layer of the stack.
+
+        So (conceptually) you would have:
+        - one copy of the hidden state at layer l-1 which has NO dropout (which is used to compute the hidden state at the NEXT timestep for that layer)
+        - another copy WITH dropout, which is used to compute the hidden state of layer l on the SAME timestep
+        
+        Refer to figure 2 in the following paper: https://arxiv.org/pdf/1409.2329.pdf
+        """
+        
+        seq_len = inputs.size()[0]
+        
+        embedded = self.embedding(inputs)
+        
+        hidden_without_dropout = []
+        logits = []
+        
+        for timestep in range(seq_len):
+            hidden_with_dropout = []
+            hidden_without_dropout.append([])
+            
+            for layer_index in range(self.num_layers):
+                input_W_x = embedded[timestep] if layer_index == 0 else hidden_with_dropout[layer_index-1]
+                input_W_h = hidden[layer_index] if timestep == 0 else hidden_without_dropout[timestep-1][layer_index]
+                
+                hidden_value = self.tanh(self.W_x[layer_index](input_W_x) + self.W_h[layer_index](input_W_h))
+                
+                hidden_without_dropout[timestep].append(hidden_value)
+                hidden_with_dropout.append(self.dropout(hidden_value))
+                
+            hidden_with_dropout = torch.stack(hidden_with_dropout)
+            
+            logits_t = self.W_y(hidden_with_dropout[self.num_layers-1])
+            logits.append(logits_t)
+        
+        logits = torch.stack(logits)
+        
+        return logits.view(self.seq_len, self.batch_size, self.vocab_size), hidden_with_dropout
 
     def generate(self, input, hidden, generated_seq_len):
         # TODO ========================
