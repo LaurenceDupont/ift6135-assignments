@@ -100,16 +100,22 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
 
     def init_weights_uniform(self):
         # TODO ========================
-        # Initialize all the weights uniformly in the range [-0.1, 0.1]
-        # and all the biases to 0 (in place)
+        # Initialize the embedding and output weights uniformly in the range [-0.1, 0.1]
+        # and output biases to 0 (in place). The embeddings should not use a bias vector.
+        # Initialize all other (i.e. recurrent and linear) weights AND biases uniformly 
+        # in the range [-k, k] where k is the square root of 1/hidden_size
         
         a = -0.1
         b = 0.1
         
+        k = 1.0 / self.hidden_size
+        
+        self.embedding.weight = nn.init.uniform_(self.embedding.weight, a, b)
+        
         for layer_index in range(self.num_layers):
-            self.W_x[layer_index].weight = nn.init.uniform_(self.W_x[layer_index].weight, a, b)
-            self.W_h[layer_index].weight = nn.init.uniform_(self.W_h[layer_index].weight, a, b)
-            self.W_h[layer_index].bias.data.fill_(0)
+            self.W_x[layer_index].weight = nn.init.uniform_(self.W_x[layer_index].weight, -k, k)
+            self.W_h[layer_index].weight = nn.init.uniform_(self.W_h[layer_index].weight, -k, k)
+            self.W_h[layer_index].bias = nn.init.uniform_(self.W_h[layer_index].bias, -k, k)
         
         self.W_y.weight = nn.init.uniform_(self.W_y.weight, a, b)
         self.W_y.bias.data.fill_(0)
@@ -187,7 +193,7 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
             hidden_without_dropout.append([])
             
             for layer_index in range(self.num_layers):
-                input_W_x = embedded[timestep] if layer_index == 0 else hidden_with_dropout[layer_index-1]
+                input_W_x = self.dropout(embedded[timestep]) if layer_index == 0 else hidden_with_dropout[layer_index-1]
                 input_W_h = hidden[layer_index] if timestep == 0 else hidden_without_dropout[timestep-1][layer_index]
                 
                 hidden_value = self.tanh(self.W_x[layer_index](input_W_x) + self.W_h[layer_index](input_W_h))
