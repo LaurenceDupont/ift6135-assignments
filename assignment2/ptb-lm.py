@@ -49,7 +49,7 @@
 #      perplexities:
 #                  RNN: train:  120  val: 157
 #                  GRU: train:   65  val: 104
-#          TRANSFORMER:  train:  77  val: 152
+#          TRANSFORMER:  train:  67  val: 146
 #    - For Problem 4.2 (exploration of optimizers), you will make use of the 
 #      experiments from 4.1, and should additionally run the following experiments:
 #          --model=RNN --optimizer=SGD --initial_lr=0.0001 --batch_size=20 --seq_len=35 --hidden_size=1500 --num_layers=2 --dp_keep_prob=0.35 
@@ -160,8 +160,7 @@ argsdict['code_file'] = sys.argv[0]
 print("\n########## Setting Up Experiment ######################")
 flags = [flag.lstrip('--') for flag in sys.argv[1:]]
 experiment_path = os.path.join(args.save_dir+'_'.join([argsdict['model'],
-                                         argsdict['optimizer']] 
-                                         + flags))
+                                         argsdict['optimizer']] ))
 
 # Increment a counter so that previous results with the same args will not
 # be overwritten. Comment out the next four lines if you only want to keep
@@ -254,7 +253,7 @@ def ptb_iterator(raw_data, batch_size, num_steps):
 
 class Batch:
     "Data processing for the transformer. This class adds a mask to the data."
-    def __init__(self, x, pad=0):
+    def __init__(self, x, pad=-1):
         self.data = x
         self.mask = self.make_mask(self.data, pad)
     
