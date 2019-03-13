@@ -92,8 +92,8 @@ np = numpy
 
 # NOTE ==============================================
 # This is where your models are imported
-from models import RNN, GRU 
-from models import make_model as TRANSFORMER
+from assignment2.models import RNN, GRU
+from assignment2.models import make_model as TRANSFORMER
 
 
 ##############################################################################
@@ -280,6 +280,10 @@ train_data, valid_data, test_data, word_to_id, id_2_word = raw_data
 vocab_size = len(word_to_id)
 print('  vocabulary size: {}'.format(vocab_size))
 
+model = GRU(emb_size=args.emb_size, hidden_size=args.hidden_size,
+            seq_len=args.seq_len, batch_size=args.batch_size,
+            vocab_size=vocab_size, num_layers=args.num_layers,
+            dp_keep_prob=args.dp_keep_prob)
 
 ###############################################################################
 # 
