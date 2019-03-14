@@ -108,7 +108,7 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
         a = -0.1
         b = 0.1
         
-        k = 1.0 / self.hidden_size
+        k = 1.0 / np.sqrt(self.hidden_size)
         
         self.embedding.weight = nn.init.uniform_(self.embedding.weight, a, b)
         
@@ -208,7 +208,7 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
         
         logits = torch.stack(logits)
         
-        return logits.view(self.seq_len, self.batch_size, self.vocab_size), hidden_without_dropout
+        return logits.view(self.seq_len, self.batch_size, self.vocab_size), hidden_with_dropout
 
     def generate(self, input, hidden, generated_seq_len):
         # TODO ========================
