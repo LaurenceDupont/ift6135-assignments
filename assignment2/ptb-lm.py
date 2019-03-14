@@ -92,8 +92,8 @@ np = numpy
 
 # NOTE ==============================================
 # This is where your models are imported
-from assignment2.models import RNN, GRU
-from assignment2.models import make_model as TRANSFORMER
+from models import RNN, GRU
+from models import make_model as TRANSFORMER
 
 
 ##############################################################################
@@ -280,10 +280,6 @@ train_data, valid_data, test_data, word_to_id, id_2_word = raw_data
 vocab_size = len(word_to_id)
 print('  vocabulary size: {}'.format(vocab_size))
 
-model = GRU(emb_size=args.emb_size, hidden_size=args.hidden_size,
-            seq_len=args.seq_len, batch_size=args.batch_size,
-            vocab_size=vocab_size, num_layers=args.num_layers,
-            dp_keep_prob=args.dp_keep_prob)
 
 ###############################################################################
 # 
@@ -434,12 +430,15 @@ val_ppls = []
 val_losses = []
 best_val_so_far = np.inf
 times = []
+wall_clock_times = []
 
 # In debug mode, only run one epoch
 if args.debug:
     num_epochs = 1 
 else:
     num_epochs = args.num_epochs
+    
+initial_wall_clock_time = time.time()
 
 # MAIN LOOP
 for epoch in range(num_epochs):
@@ -477,6 +476,7 @@ for epoch in range(num_epochs):
     train_losses.extend(train_loss)
     val_losses.extend(val_loss)
     times.append(time.time() - t0)
+    wall_clock_times.append(time.time() - initial_wall_clock_time)
     log_str = 'epoch: ' + str(epoch) + '\t' \
             + 'train ppl: ' + str(train_ppl) + '\t' \
             + 'val ppl: ' + str(val_ppl)  + '\t' \
@@ -492,7 +492,8 @@ print('\nDONE\n\nSaving learning curves to '+lc_path)
 np.save(lc_path, {'train_ppls':train_ppls, 
                   'val_ppls':val_ppls, 
                   'train_losses':train_losses,
-                  'val_losses':val_losses})
+                  'val_losses':val_losses,
+                  'times':wall_clock_times})
 # NOTE ==============================================
 # To load these, run 
 # >>> x = np.load(lc_path)[()]
