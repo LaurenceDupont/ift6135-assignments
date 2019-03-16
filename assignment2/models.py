@@ -339,13 +339,13 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
                         shape: (num_layers, batch_size, hidden_size)
         """
 
-        seq_len = inputs.size[0]
+        seq_len = inputs.size()[0]
         hidden_last_timestep = [] # No dropout
         hidden_current_timestep = [] # Dropout
         hidden_ = []
         logits = []
 
-        emb_input = self.embedded(inputs)
+        emb_input = self.embedding(inputs)
 
         for timestep in range(seq_len):
             emb_current_input = self.emb_dropout(emb_input[timestep])
@@ -362,7 +362,7 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
             logits.append(pred)
 
         logits = torch.stack(logits)
-        hidden_ = torch.stack(hidden_last_timestep)
+        hidden_ = torch.stack(hidden_last_timestep[-1])
 
         return logits.view(self.seq_len, self.batch_size, self.vocab_size), hidden_
 
@@ -395,7 +395,7 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
         hidden_current_timestep = [] # Dropout
         samples = []
 
-        emb_input = self.embedded(input)
+        emb_input = self.embedding(input)
 
         for timestep in range(generated_seq_len):
             emb_current_input = self.emb_dropout(emb_input[timestep])
