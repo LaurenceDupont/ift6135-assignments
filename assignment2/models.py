@@ -128,7 +128,9 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
         """
         This is used for the first mini-batch in an epoch, only.
         """
-        return torch.zeros(self.num_layers, self.batch_size, self.hidden_size).to(device) # a parameter tensor of shape (self.num_layers, self.batch_size, self.hidden_size)
+        hidden = nn.Parameter(torch.zeros(self.num_layers, self.batch_size, self.hidden_size), requires_grad=True).to(device)
+        return hidden # a parameter tensor of shape (self.num_layers, self.batch_size, self.hidden_size)
+        #return torch.zeros(self.num_layers, self.batch_size, self.hidden_size).to(device) # a parameter tensor of shape (self.num_layers, self.batch_size, self.hidden_size)
 
     def forward(self, inputs, hidden):
         # TODO ========================
@@ -443,6 +445,8 @@ class GRU_unit(nn.Module):
         self.htilde_hidden = nn.Linear(hidden_size, hidden_size)
         self.htilde_act = nn.Tanh()
 
+        self.ones = torch.ones(self.hidden_size, dtype=torch.float).to(device)
+
         #self.out = nn.Linear(hidden_size, hidden_size),
         self.dropout = nn.Dropout(p=(1-self.dp_keep_prob))
 
@@ -469,7 +473,7 @@ class GRU_unit(nn.Module):
         rt = self.rt_act(self.rt_input(input) + self.rt_hidden(hidden))
         zt = self.zt_act(self.zt_input(input) + self.zt_hidden(hidden))
         htilde = self.htilde_act(self.htilde_input(input) + self.htilde_hidden(hidden * rt))
-        h = (torch.ones(self.hidden_size, dtype=torch.float).to(device) - zt) * hidden + zt * htilde
+        h = (self.ones - zt) * hidden + zt * htilde
         return self.dropout(h), h
 
 
