@@ -274,22 +274,30 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
         self.embedding = nn.Embedding(num_embeddings=self.vocab_size, embedding_dim=self.emb_size)
         self.emb_dropout = nn.Dropout(p=(1-self.dp_keep_prob))
 
-        self.hidden = [self.init_hidden()]
-        self.hidden.extend([self.init_hidden() for i in range(num_layers-1)])
-
-        self.core = [GRU_unit(self.emb_size, self.hidden_size, self.batch_size, self.dp_keep_prob)]
+        self.core = [GRU_unit(self.emb_size, self.hidden_size, self.batch_size, self.dp_keep_prob).to(device)]
         if self.num_layers>1:
-            self.core.extend([GRU_unit(self.hidden_size, self.hidden_size, self.batch_size, self.dp_keep_prob) for i in range(num_layers-1)])
+            self.core.extend([GRU_unit(self.hidden_size, self.hidden_size, self.batch_size, self.dp_keep_prob).to(device) for i in range(num_layers-1)])
 
-        self.out = nn.Linear(hidden_size, vocab_size) ## Output dimension?
+        self.out = nn.Linear(hidden_size, vocab_size)
+
+        self.init_weights_uniform()
 
     def init_weights_uniform(self):
-        # TODO ========================
-        # Initialize all the weights uniformly in the range [-0.1, 0.1]
-        # and all the biases to 0 (in place)
-        nn.init.uniform_(self.embedding.parameters(), -0.1, 0.1)
-        for i in range(len(self.gru_unit)):
-            nn.init.uniform_(self.gru_unit[0].parameters(), -0.1, 0.1)
+        # Initialize the embedding and output weights uniformly in the range [-0.1, 0.1]
+        # and output biases to 0 (in place). The embeddings should not use a bias vector.
+        # Initialize all other (i.e. recurrent and linear) weights AND biases uniformly 
+        # in the range [-k, k] where k is the square root of 1/hidden_size
+        
+        a = -0.1
+        b = 0.1
+        k = 1.0 / np.sqrt(self.hidden_size)
+        
+        self.embedding.weight = nn.init.uniform_(self.embedding.weight, a, b)
+        self.out.weight = nn.init.uniform_(self.out.weight, -k, k)
+        self.out.bias.data.fill_(0)
+        
+        for i in range(len(self.core)):
+            self.core[i].init_weights(k=k)
 
         return None
 
@@ -299,8 +307,7 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
         """
         This is used for the first mini-batch in an epoch, only.
         """
-        hidden = nn.Parameter(torch.zeros(self.num_layers, self.batch_size, self.hidden_size), requires_grad=True)
-        return hidden # a parameter tensor of shape (self.num_layers, self.batch_size, self.hidden_size)
+        return torch.zeros(self.num_layers, self.batch_size, self.hidden_size).to(device)
 
     def forward(self, inputs, hidden):
         # TODO ========================
@@ -338,33 +345,35 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
                   if you are curious.
                         shape: (num_layers, batch_size, hidden_size)
         """
-
         seq_len = inputs.size()[0]
-        hidden_last_timestep = [] # No dropout
-        hidden_current_timestep = [] # Dropout
-        hidden_ = []
+        
+        embedded = self.embedding(inputs)
+        
+        hidden_without_dropout = []
         logits = []
-
-        emb_input = self.embedding(inputs)
-
+        
         for timestep in range(seq_len):
-            emb_current_input = self.emb_dropout(emb_input[timestep])
-            hidden_last_timestep.append([])
-            for layer in range(self.num_layers):
-                input_W_x = emb_current_input if layer == 0 else hidden_current_timestep[layer-1]
-                input_W_h = hidden[layer] if timestep == 0 else hidden_last_timestep[timestep-1][layer]
-
-                dropout_output, output = self.core[layer](input_W_x, input_W_h)
-                hidden_last_timestep[timestep].append(output)
-                hidden_current_timestep.append(dropout_output)
-
-            pred = self.out(hidden_current_timestep[-1])
-            logits.append(pred)
-
+            hidden_with_dropout = []
+            hidden_without_dropout.append([])
+            
+            for layer_index in range(self.num_layers):
+                input_W_x = self.emb_dropout(embedded[timestep]) if layer_index == 0 else hidden_with_dropout[layer_index-1]
+                input_W_h = hidden[layer_index] if timestep == 0 else hidden_without_dropout[timestep-1][layer_index]
+                
+                dropout_output, output = self.core[layer_index](input_W_x, input_W_h)
+                
+                hidden_without_dropout[timestep].append(output)
+                hidden_with_dropout.append(dropout_output)
+                
+            hidden_with_dropout = torch.stack(hidden_with_dropout)
+            
+            logits_t = self.out(hidden_with_dropout[self.num_layers-1])
+            logits.append(logits_t)
+        
         logits = torch.stack(logits)
-        hidden_ = torch.stack(hidden_last_timestep[-1])
+        
+        return logits.view(self.seq_len, self.batch_size, self.vocab_size), hidden_with_dropout
 
-        return logits.view(self.seq_len, self.batch_size, self.vocab_size), hidden_
 
     def generate(self, input, hidden, generated_seq_len):
         # TODO ========================
@@ -391,28 +400,28 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
             - Sampled sequences of tokens
                         shape: (generated_seq_len, batch_size)
         """
-        hidden_last_timestep = [] # No dropout
-        hidden_current_timestep = [] # Dropout
-        samples = []
-
-        emb_input = self.embedding(input)
-
-        for timestep in range(generated_seq_len):
-            emb_current_input = self.emb_dropout(emb_input[timestep])
-            hidden_last_timestep.append([])
-            for layer in range(self.num_layers):
-                input_W_x = emb_current_input if layer == 0 else hidden_current_timestep[layer-1]
-                input_W_h = hidden[layer] if timestep == 0 else hidden_last_timestep[timestep-1][layer]
-
-                dropout_output, output = self.core[layer](input_W_x, input_W_h)
-                hidden_last_timestep[timestep].append(output)
-                hidden_current_timestep.append(dropout_output)
-
-            softmax_output = F.softmax(self.out(hidden_current_timestep[-1]), dim=1)
-            pred = torch.argmax(softmax_output, dim=1)
-            samples.append(pred)
-
-        return samples
+        ## hidden_last_timestep = [] # No dropout
+        ## hidden_current_timestep = [] # Dropout
+        ## samples = []
+## 
+        ## emb_input = self.embedding(input)
+## 
+        ## for timestep in range(generated_seq_len):
+        ##     emb_current_input = self.emb_dropout(emb_input[timestep])
+        ##     hidden_last_timestep.append([])
+        ##     for layer in range(self.num_layers):
+        ##         input_W_x = emb_current_input if layer == 0 else hidden_current_timestep[layer-1]
+        ##         input_W_h = hidden[layer] if timestep == 0 else hidden_last_timestep[timestep-1][layer]
+## 
+        ##         dropout_output, output = self.core[layer](input_W_x, input_W_h)
+        ##         hidden_last_timestep[timestep].append(output)
+        ##         hidden_current_timestep.append(dropout_output)
+## 
+        ##     softmax_output = F.softmax(self.out(hidden_current_timestep[-1]), dim=1)
+        ##     pred = torch.argmax(softmax_output, dim=1)
+        ##     samples.append(pred)
+## 
+        ## return samples
 
 class GRU_unit(nn.Module):
     def __init__(self, emb_size, hidden_size, batch_size, dp_keep_prob):
@@ -427,26 +436,41 @@ class GRU_unit(nn.Module):
         self.rt_act = nn.Sigmoid()
 
         self.zt_input = nn.Linear(emb_size, hidden_size)
-        self.zt_hidden = nn.Linear(emb_size, hidden_size)
+        self.zt_hidden = nn.Linear(hidden_size, hidden_size)
         self.zt_act = nn.Sigmoid()
 
         self.htilde_input = nn.Linear(emb_size, hidden_size)
         self.htilde_hidden = nn.Linear(hidden_size, hidden_size)
         self.htilde_act = nn.Tanh()
 
-        self.out = nn.Sequential(
-                            nn.Linear(hidden_size, hidden_size),
-                            nn.Sigmoid()
-                                )
+        #self.out = nn.Linear(hidden_size, hidden_size),
         self.dropout = nn.Dropout(p=(1-self.dp_keep_prob))
 
+    def init_weights(self, k=None):
+        if k is None:
+            return
+
+        self.rt_input.weight = nn.init.uniform_(self.rt_input.weight, -k, k)
+        self.rt_input.bias.data.fill_(0)
+        self.rt_hidden.weight = nn.init.uniform_(self.rt_hidden.weight, -k, k)
+        self.rt_hidden.bias.data.fill_(0)
+
+        self.zt_input.weight = nn.init.uniform_(self.zt_input.weight, -k, k)
+        self.zt_input.bias.data.fill_(0)
+        self.zt_hidden.weight = nn.init.uniform_(self.zt_hidden.weight, -k, k)
+        self.zt_hidden.bias.data.fill_(0)
+
+        self.htilde_input.weight = nn.init.uniform_(self.htilde_input.weight, -k, k)
+        self.htilde_input.bias.data.fill_(0)
+        self.htilde_hidden.weight = nn.init.uniform_(self.htilde_hidden.weight, -k, k)
+        self.htilde_hidden.bias.data.fill_(0)
 
     def forward(self, input, hidden):
         rt = self.rt_act(self.rt_input(input) + self.rt_hidden(hidden))
         zt = self.zt_act(self.zt_input(input) + self.zt_hidden(hidden))
         htilde = self.htilde_act(self.htilde_input(input) + self.htilde_hidden(hidden * rt))
-        h = (torch.ones(self.hidden_size, dtype=torch.float) - zt) * hidden + zt * htilde
-        return self.dropout(self.out(h)), self.out(h)
+        h = (torch.ones(self.hidden_size, dtype=torch.float).to(device) - zt) * hidden + zt * htilde
+        return self.dropout(h), h
 
 
 # Problem 3
@@ -553,20 +577,26 @@ class MultiHeadedAttention(nn.Module):
         # TODO: create/initialize any necessary parameters or layers
         # Note: the only Pytorch modules you are allowed to use are nn.Linear 
         # and nn.Dropout
+
+    # NOT used 
     def softmax(self, x):
-        x = x - torch.max(x)
-        x_tilde = torch.exp(x)
+        val = []
+        for idx in range(x.shape[-1]):
+            column = x[:,:,:,idx]
+            column = column - torch.max(column)
+
+            x_tilde = torch.exp(column)
+
+            summy = torch.sum(column)
+            if (torch.sum(torch.isnan(summy)) > 0):
+                print("Hello there!")
+            val.append(x_tilde/summy)
+
         
-        nb_dim = len(x_tilde.size())
-        sumy = x_tilde.sum(0)
-        for i in range(nb_dim - 2):
-            sumy = sumy.sum(0)
-
-        if (torch.sum(torch.isnan(sumy)) > 0):
-            print("Hello there!")
-        return x_tilde/sumy
+        return torch.stack(val, dim=-1)
 
 
+    # Based off: https://github.com/harvardnlp/annotated-transformer
     def attention(self, key, query, value, mask=None, dropout=None):
         "Compute 'Scaled Dot Product Attention'"
         x_tilde = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.d_k)
