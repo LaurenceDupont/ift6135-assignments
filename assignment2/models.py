@@ -128,7 +128,9 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
         """
         This is used for the first mini-batch in an epoch, only.
         """
-        return torch.zeros(self.num_layers, self.batch_size, self.hidden_size).to(device) # a parameter tensor of shape (self.num_layers, self.batch_size, self.hidden_size)
+        hidden = nn.Parameter(torch.zeros(self.num_layers, self.batch_size, self.hidden_size), requires_grad=True).to(device)
+        return hidden # a parameter tensor of shape (self.num_layers, self.batch_size, self.hidden_size)
+        #return torch.zeros(self.num_layers, self.batch_size, self.hidden_size).to(device) # a parameter tensor of shape (self.num_layers, self.batch_size, self.hidden_size)
 
     def forward(self, inputs, hidden):
         # TODO ========================
@@ -371,7 +373,7 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
             
             logits_t = self.out(hidden_with_dropout[self.num_layers-1])
             logits.append(logits_t)
-
+        
         logits = torch.stack(logits)
         
         return logits.view(self.seq_len, self.batch_size, self.vocab_size), hidden_with_dropout # torch.stack(hidden_without_dropout[-1])
@@ -445,6 +447,8 @@ class GRU_unit(nn.Module):
         self.htilde_hidden = nn.Linear(hidden_size, hidden_size, bias=False)
         self.htilde_act = nn.Tanh()
 
+        self.ones = torch.ones(self.hidden_size, dtype=torch.float).to(device)
+
         #self.out = nn.Linear(hidden_size, hidden_size),
         self.dropout = nn.Dropout(p=(1-self.dp_keep_prob))
 
@@ -471,6 +475,7 @@ class GRU_unit(nn.Module):
         rt = self.rt_act(self.rt_input(input) + self.rt_hidden(hidden))
         zt = self.zt_act(self.zt_input(input) + self.zt_hidden(hidden))
         htilde = self.htilde_act(self.htilde_input(input) + self.htilde_hidden(torch.mul(hidden, rt)))
+        # h = (self.ones - zt) * hidden + zt * htilde
         h = torch.mul((torch.ones((input.size()[0], self.hidden_size), dtype=torch.float).to(device).sub(zt)),hidden).add(torch.mul(zt,htilde))
         return self.dropout(h), h
 
