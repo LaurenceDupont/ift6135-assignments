@@ -274,9 +274,11 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
         self.embedding = nn.Embedding(num_embeddings=self.vocab_size, embedding_dim=self.emb_size)
         self.emb_dropout = nn.Dropout(p=(1-self.dp_keep_prob))
 
-        self.core = [GRU_unit(self.emb_size, self.hidden_size, self.batch_size, self.dp_keep_prob).to(device)]
+        core = [GRU_unit(self.emb_size, self.hidden_size, self.batch_size, self.dp_keep_prob).to(device)]
         if self.num_layers>1:
-            self.core.extend([GRU_unit(self.hidden_size, self.hidden_size, self.batch_size, self.dp_keep_prob).to(device) for i in range(num_layers-1)])
+            core.extend([GRU_unit(self.hidden_size, self.hidden_size, self.batch_size, self.dp_keep_prob).to(device) for i in range(num_layers-1)])
+
+        self.core = nn.ModuleList(core)
 
         self.out = nn.Linear(hidden_size, vocab_size)
 
@@ -293,7 +295,7 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
         k = 1.0 / np.sqrt(self.hidden_size)
         
         self.embedding.weight = nn.init.uniform_(self.embedding.weight, a, b)
-        self.out.weight = nn.init.uniform_(self.out.weight, -k, k)
+        self.out.weight = nn.init.uniform_(self.out.weight, a, b)
         self.out.bias.data.fill_(0)
         
         for i in range(len(self.core)):
@@ -307,7 +309,7 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
         """
         This is used for the first mini-batch in an epoch, only.
         """
-        return torch.zeros(self.num_layers, self.batch_size, self.hidden_size).to(device)
+        return torch.zeros((self.num_layers, self.batch_size, self.hidden_size), requires_grad=False).to(device)
 
     def forward(self, inputs, hidden):
         # TODO ========================
@@ -369,10 +371,10 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
             
             logits_t = self.out(hidden_with_dropout[self.num_layers-1])
             logits.append(logits_t)
-        
+
         logits = torch.stack(logits)
         
-        return logits.view(self.seq_len, self.batch_size, self.vocab_size), hidden_with_dropout
+        return logits.view(self.seq_len, self.batch_size, self.vocab_size), hidden_with_dropout # torch.stack(hidden_without_dropout[-1])
 
 
     def generate(self, input, hidden, generated_seq_len):
@@ -432,15 +434,15 @@ class GRU_unit(nn.Module):
         self.dp_keep_prob = dp_keep_prob
 
         self.rt_input = nn.Linear(emb_size, hidden_size)
-        self.rt_hidden = nn.Linear(hidden_size, hidden_size)
+        self.rt_hidden = nn.Linear(hidden_size, hidden_size, bias=False)
         self.rt_act = nn.Sigmoid()
 
         self.zt_input = nn.Linear(emb_size, hidden_size)
-        self.zt_hidden = nn.Linear(hidden_size, hidden_size)
+        self.zt_hidden = nn.Linear(hidden_size, hidden_size, bias=False)
         self.zt_act = nn.Sigmoid()
 
         self.htilde_input = nn.Linear(emb_size, hidden_size)
-        self.htilde_hidden = nn.Linear(hidden_size, hidden_size)
+        self.htilde_hidden = nn.Linear(hidden_size, hidden_size, bias=False)
         self.htilde_act = nn.Tanh()
 
         #self.out = nn.Linear(hidden_size, hidden_size),
@@ -453,23 +455,23 @@ class GRU_unit(nn.Module):
         self.rt_input.weight = nn.init.uniform_(self.rt_input.weight, -k, k)
         self.rt_input.bias.data.fill_(0)
         self.rt_hidden.weight = nn.init.uniform_(self.rt_hidden.weight, -k, k)
-        self.rt_hidden.bias.data.fill_(0)
+        #self.rt_hidden.bias.data.fill_(0)
 
         self.zt_input.weight = nn.init.uniform_(self.zt_input.weight, -k, k)
         self.zt_input.bias.data.fill_(0)
         self.zt_hidden.weight = nn.init.uniform_(self.zt_hidden.weight, -k, k)
-        self.zt_hidden.bias.data.fill_(0)
+        #self.zt_hidden.bias.data.fill_(0)
 
         self.htilde_input.weight = nn.init.uniform_(self.htilde_input.weight, -k, k)
         self.htilde_input.bias.data.fill_(0)
         self.htilde_hidden.weight = nn.init.uniform_(self.htilde_hidden.weight, -k, k)
-        self.htilde_hidden.bias.data.fill_(0)
+        #self.htilde_hidden.bias.data.fill_(0)
 
     def forward(self, input, hidden):
         rt = self.rt_act(self.rt_input(input) + self.rt_hidden(hidden))
         zt = self.zt_act(self.zt_input(input) + self.zt_hidden(hidden))
-        htilde = self.htilde_act(self.htilde_input(input) + self.htilde_hidden(hidden * rt))
-        h = (torch.ones(self.hidden_size, dtype=torch.float).to(device) - zt) * hidden + zt * htilde
+        htilde = self.htilde_act(self.htilde_input(input) + self.htilde_hidden(torch.mul(hidden, rt)))
+        h = torch.mul((torch.ones((input.size()[0], self.hidden_size), dtype=torch.float).to(device).sub(zt)),hidden).add(torch.mul(zt,htilde))
         return self.dropout(h), h
 
 
