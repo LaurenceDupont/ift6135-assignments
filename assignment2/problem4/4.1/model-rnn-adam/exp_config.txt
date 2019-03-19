@@ -12,6 +12,6 @@ num_epochs    40
 num_layers    2
 optimizer    ADAM
 save_best    True
-save_dir    RNN_ADAM_1
+save_dir    RNN_ADAM_33
 seed    1111
 seq_len    35

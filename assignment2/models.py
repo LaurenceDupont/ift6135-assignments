@@ -128,9 +128,7 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
         """
         This is used for the first mini-batch in an epoch, only.
         """
-        hidden = nn.Parameter(torch.zeros(self.num_layers, self.batch_size, self.hidden_size), requires_grad=True).to(device)
-        return hidden # a parameter tensor of shape (self.num_layers, self.batch_size, self.hidden_size)
-        #return torch.zeros(self.num_layers, self.batch_size, self.hidden_size).to(device) # a parameter tensor of shape (self.num_layers, self.batch_size, self.hidden_size)
+        return torch.zeros((self.num_layers, self.batch_size, self.hidden_size), requires_grad=False).to(device) # a parameter tensor of shape (self.num_layers, self.batch_size, self.hidden_size)
 
     def forward(self, inputs, hidden):
         # TODO ========================
@@ -210,7 +208,7 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
         
         logits = torch.stack(logits)
         
-        return logits.view(self.seq_len, self.batch_size, self.vocab_size), hidden_with_dropout
+        return logits.view(self.seq_len, self.batch_size, self.vocab_size), torch.stack(hidden_without_dropout[-1])
 
     def generate(self, input, hidden, generated_seq_len):
         # TODO ========================
