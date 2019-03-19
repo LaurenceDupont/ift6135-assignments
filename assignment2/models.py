@@ -311,7 +311,7 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
         """
         This is used for the first mini-batch in an epoch, only.
         """
-        return torch.zeros((self.num_layers, self.batch_size, self.hidden_size), requires_grad=False).to(device)
+        return torch.zeros(self.num_layers, self.batch_size, self.hidden_size).to(device).detach()
 
     def forward(self, inputs, hidden):
         # TODO ========================
@@ -375,8 +375,9 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
             logits.append(logits_t)
         
         logits = torch.stack(logits)
+        last_hidden = torch.stack(hidden_without_dropout[-1])
         
-        return logits.view(self.seq_len, self.batch_size, self.vocab_size), hidden_with_dropout # torch.stack(hidden_without_dropout[-1])
+        return logits.view(self.seq_len, self.batch_size, self.vocab_size), last_hidden
 
 
     def generate(self, input, hidden, generated_seq_len):
@@ -404,28 +405,28 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
             - Sampled sequences of tokens
                         shape: (generated_seq_len, batch_size)
         """
-        ## hidden_last_timestep = [] # No dropout
-        ## hidden_current_timestep = [] # Dropout
-        ## samples = []
-## 
-        ## emb_input = self.embedding(input)
-## 
-        ## for timestep in range(generated_seq_len):
-        ##     emb_current_input = self.emb_dropout(emb_input[timestep])
-        ##     hidden_last_timestep.append([])
-        ##     for layer in range(self.num_layers):
-        ##         input_W_x = emb_current_input if layer == 0 else hidden_current_timestep[layer-1]
-        ##         input_W_h = hidden[layer] if timestep == 0 else hidden_last_timestep[timestep-1][layer]
-## 
-        ##         dropout_output, output = self.core[layer](input_W_x, input_W_h)
-        ##         hidden_last_timestep[timestep].append(output)
-        ##         hidden_current_timestep.append(dropout_output)
-## 
-        ##     softmax_output = F.softmax(self.out(hidden_current_timestep[-1]), dim=1)
-        ##     pred = torch.argmax(softmax_output, dim=1)
-        ##     samples.append(pred)
-## 
-        ## return samples
+        hidden_last_timestep = [] # No dropout
+        hidden_current_timestep = [] # Dropout
+        samples = []
+
+        emb_input = self.embedding(input)
+
+        for timestep in range(generated_seq_len):
+            emb_current_input = self.emb_dropout(emb_input[timestep])
+            hidden_last_timestep.append([])
+            for layer in range(self.num_layers):
+                input_W_x = emb_current_input if layer == 0 else hidden_current_timestep[layer-1]
+                input_W_h = hidden[layer] if timestep == 0 else hidden_last_timestep[timestep-1][layer]
+
+                dropout_output, output = self.core[layer](input_W_x, input_W_h)
+                hidden_last_timestep[timestep].append(output)
+                hidden_current_timestep.append(dropout_output)
+
+            softmax_output = F.softmax(self.out(hidden_current_timestep[-1]), dim=1)
+            pred = torch.argmax(softmax_output, dim=1)
+            samples.append(pred)
+
+        return samples
 
 class GRU_unit(nn.Module):
     def __init__(self, emb_size, hidden_size, batch_size, dp_keep_prob):
@@ -449,7 +450,6 @@ class GRU_unit(nn.Module):
 
         self.ones = torch.ones(self.hidden_size, dtype=torch.float).to(device)
 
-        #self.out = nn.Linear(hidden_size, hidden_size),
         self.dropout = nn.Dropout(p=(1-self.dp_keep_prob))
 
     def init_weights(self, k=None):
@@ -459,24 +459,21 @@ class GRU_unit(nn.Module):
         self.rt_input.weight = nn.init.uniform_(self.rt_input.weight, -k, k)
         self.rt_input.bias.data.fill_(0)
         self.rt_hidden.weight = nn.init.uniform_(self.rt_hidden.weight, -k, k)
-        #self.rt_hidden.bias.data.fill_(0)
 
         self.zt_input.weight = nn.init.uniform_(self.zt_input.weight, -k, k)
         self.zt_input.bias.data.fill_(0)
         self.zt_hidden.weight = nn.init.uniform_(self.zt_hidden.weight, -k, k)
-        #self.zt_hidden.bias.data.fill_(0)
 
         self.htilde_input.weight = nn.init.uniform_(self.htilde_input.weight, -k, k)
         self.htilde_input.bias.data.fill_(0)
         self.htilde_hidden.weight = nn.init.uniform_(self.htilde_hidden.weight, -k, k)
-        #self.htilde_hidden.bias.data.fill_(0)
 
     def forward(self, input, hidden):
         rt = self.rt_act(self.rt_input(input) + self.rt_hidden(hidden))
         zt = self.zt_act(self.zt_input(input) + self.zt_hidden(hidden))
         htilde = self.htilde_act(self.htilde_input(input) + self.htilde_hidden(torch.mul(hidden, rt)))
-        # h = (self.ones - zt) * hidden + zt * htilde
-        h = torch.mul((torch.ones((input.size()[0], self.hidden_size), dtype=torch.float).to(device).sub(zt)),hidden).add(torch.mul(zt,htilde))
+        h = (self.ones - zt) * hidden + zt * htilde
+        # h = torch.mul((torch.ones((input.size()[0], self.hidden_size), dtype=torch.float).to(device).sub(zt)),hidden).add(torch.mul(zt,htilde))
         return self.dropout(h), h
 
 
