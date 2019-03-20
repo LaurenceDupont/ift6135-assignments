@@ -12,6 +12,6 @@ num_epochs    40
 num_layers    2
 optimizer    SGD
 save_best    False
-save_dir    RNN_SGD_2
+save_dir    RNN_SGD_3
 seed    1111
 seq_len    35

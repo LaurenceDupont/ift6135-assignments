@@ -12,6 +12,6 @@ num_epochs    40
 num_layers    2
 optimizer    SGD_LR_SCHEDULE
 save_best    False
-save_dir    RNN_SGD_LR_SCHEDULE_5
+save_dir    RNN_SGD_LR_SCHEDULE_14
 seed    1111
 seq_len    35
