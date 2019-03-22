@@ -135,17 +135,18 @@ parser.add_argument('--dp_keep_prob', type=float, default=0.35,
                     help='dropout *keep* probability (dp_keep_prob=0 means no dropout')
 
 # Arguments that you may want to make use of / implement more code for
+parser.add_argument('--evaluate', action='store_true',
+                    help="use this flag to run on the test set. Only do this \
+                    ONCE for each model setting, and only after you've \
+                    completed ALL hyperparameter tuning on the validation set.\
+                    Note we are not requiring you to do this.")
 parser.add_argument('--debug', action='store_true') 
 parser.add_argument('--save_dir', type=str, default='',
                     help='path to save the experimental config, logs, model \
                     This is automatically generated based on the command line \
                     arguments you pass and only needs to be set if you want a \
                     custom dir name')
-parser.add_argument('--evaluate', type=bool, default=False,
-                    help="use this flag to run on the test set. Only do this \
-                    ONCE for each model setting, and only after you've \
-                    completed ALL hyperparameter tuning on the validation set.\
-                    Note we are not requiring you to do this.")
+
 
 # DO NOT CHANGE THIS (setting the random seed makes experiments deterministic, 
 # which helps for reproducibility)
@@ -507,7 +508,7 @@ if args.evaluate == False:
         train_ppl, train_loss = run_epoch(model, train_data, True, lr)
 
         # RUN MODEL ON VALIDATION DATA
-        val_ppl, val_loss, average_timestep_loss = run_epoch(model, valid_data)
+        val_ppl, val_loss = run_epoch(model, valid_data)
 
         # SAVE MODEL IF IT'S THE BEST SO FAR
         if val_ppl < best_val_so_far:
@@ -550,8 +551,6 @@ if args.evaluate == False:
                       'times':wall_clock_times})
 
 else:
-
-
     model.load_state_dict(torch.load(os.path.join("problem4\\4.1\\model_gru_sgd_lr\\best_params.pt")))
     print('\nRunning Validation on pre-trained model ------------------')
     average_timestep_loss = run_epoch(model, valid_data, is_train=False, num5_1=True)
