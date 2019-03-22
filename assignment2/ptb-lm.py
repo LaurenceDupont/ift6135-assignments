@@ -95,6 +95,7 @@ np = numpy
 from models import RNN, GRU
 from models import make_model as TRANSFORMER
 
+import matplotlib.pyplot as plt
 
 ##############################################################################
 #
@@ -140,7 +141,7 @@ parser.add_argument('--save_dir', type=str, default='',
                     This is automatically generated based on the command line \
                     arguments you pass and only needs to be set if you want a \
                     custom dir name')
-parser.add_argument('--evaluate', action='store_true',
+parser.add_argument('--evaluate', type=bool, default=False,
                     help="use this flag to run on the test set. Only do this \
                     ONCE for each model setting, and only after you've \
                     completed ALL hyperparameter tuning on the validation set.\
@@ -291,33 +292,67 @@ print('  vocabulary size: {}'.format(vocab_size))
 # This is where your model code will be called. You may modify this code
 # if required for your implementation, but it should not typically be necessary,
 # and you must let the TAs know if you do so.
-if args.model == 'RNN':
-    model = RNN(emb_size=args.emb_size, hidden_size=args.hidden_size, 
-                seq_len=args.seq_len, batch_size=args.batch_size,
-                vocab_size=vocab_size, num_layers=args.num_layers, 
-                dp_keep_prob=args.dp_keep_prob) 
-elif args.model == 'GRU':
-    model = GRU(emb_size=args.emb_size, hidden_size=args.hidden_size, 
-                seq_len=args.seq_len, batch_size=args.batch_size,
-                vocab_size=vocab_size, num_layers=args.num_layers, 
-                dp_keep_prob=args.dp_keep_prob)
-elif args.model == 'TRANSFORMER':
-    if args.debug:  # use a very small model
-        model = TRANSFORMER(vocab_size=vocab_size, n_units=16, n_blocks=2)
+if args.evaluate == False:
+    if args.model == 'RNN':
+        model = RNN(emb_size=args.emb_size, hidden_size=args.hidden_size,
+                    seq_len=args.seq_len, batch_size=args.batch_size,
+                    vocab_size=vocab_size, num_layers=args.num_layers,
+                    dp_keep_prob=args.dp_keep_prob)
+    elif args.model == 'GRU':
+        model = GRU(emb_size=args.emb_size, hidden_size=args.hidden_size,
+                    seq_len=args.seq_len, batch_size=args.batch_size,
+                    vocab_size=vocab_size, num_layers=args.num_layers,
+                    dp_keep_prob=args.dp_keep_prob)
+    elif args.model == 'TRANSFORMER':
+        if args.debug:  # use a very small model
+            model = TRANSFORMER(vocab_size=vocab_size, n_units=16, n_blocks=2)
+        else:
+            # Note that we're using num_layers and hidden_size to mean slightly
+            # different things here than in the RNNs.
+            # Also, the Transformer also has other hyperparameters
+            # (such as the number of attention heads) which can change it's behavior.
+            model = TRANSFORMER(vocab_size=vocab_size, n_units=args.hidden_size,
+                                n_blocks=args.num_layers, dropout=1.-args.dp_keep_prob)
+        # these 3 attributes don't affect the Transformer's computations;
+        # they are only used in run_epoch
+        model.batch_size=args.batch_size
+        model.seq_len=args.seq_len
+        model.vocab_size=vocab_size
     else:
-        # Note that we're using num_layers and hidden_size to mean slightly 
-        # different things here than in the RNNs.
-        # Also, the Transformer also has other hyperparameters 
-        # (such as the number of attention heads) which can change it's behavior.
-        model = TRANSFORMER(vocab_size=vocab_size, n_units=args.hidden_size, 
-                            n_blocks=args.num_layers, dropout=1.-args.dp_keep_prob) 
-    # these 3 attributes don't affect the Transformer's computations; 
-    # they are only used in run_epoch
-    model.batch_size=args.batch_size
-    model.seq_len=args.seq_len
-    model.vocab_size=vocab_size
+      print("Model type not recognized.")
 else:
-  print("Model type not recognized.")
+    exp_config = open(os.path.join("problem4\\4.1\\model_gru_sgd_lr\\exp_config.txt"), "r")
+    file = {}
+    for line in exp_config:
+        key, value = line.split()
+        file[key] = value
+    if args.model == 'RNN':
+        model = RNN(emb_size=int(file["emb_size"]), hidden_size=int(file["hidden_size"]),
+                    seq_len=int(file["seq_len"]), batch_size=int(file["batch_size"]),
+                    vocab_size=vocab_size, num_layers=float(file["num_layers"]),
+                    dp_keep_prob=int(file["dp_keep_prob"]))
+    elif args.model == 'GRU':
+        model = GRU(emb_size=int(file["emb_size"]), hidden_size=int(file["hidden_size"]),
+                    seq_len=int(file["seq_len"]), batch_size=int(file["batch_size"]),
+                    vocab_size=vocab_size, num_layers=int(file["num_layers"]),
+                    dp_keep_prob=float(file["dp_keep_prob"]))
+    elif args.model == 'TRANSFORMER':
+        if args.debug:  # use a very small model
+            model = TRANSFORMER(vocab_size=vocab_size, n_units=16, n_blocks=2)
+        else:
+            # Note that we're using num_layers and hidden_size to mean slightly
+            # different things here than in the RNNs.
+            # Also, the Transformer also has other hyperparameters
+            # (such as the number of attention heads) which can change it's behavior.
+            model = TRANSFORMER(vocab_size=vocab_size, n_units=int(file["hidden_size"]),
+                                n_blocks=int(file["num_layers"]), dropout=1.-float(file["dp_keep_prob"]))
+        # these 3 attributes don't affect the Transformer's computations;
+        # they are only used in run_epoch
+        model.batch_size=int(file["batch_size"])
+        model.seq_len=int(file["seq_len"])
+        model.vocab_size=vocab_size
+    else:
+      print("Model type not recognized.")
 
 model.to(device)
 
@@ -356,10 +391,12 @@ def repackage_hidden(h):
         return tuple(repackage_hidden(v) for v in h)
 
 
-def run_epoch(model, data, is_train=False, lr=1.0):
+def run_epoch(model, data, is_train=False, lr=1.0, num5_1=False):
     """
     One epoch of training/validation (depending on flag is_train).
     """
+    if num5_1:
+        average_ts_loss = torch.zeros(model.seq_len)
     if is_train:
         model.train()
     else:
@@ -393,26 +430,43 @@ def run_epoch(model, data, is_train=False, lr=1.0):
         # This line currently averages across all the sequences in a mini-batch 
         # and all time-steps of the sequences.
         # For problem 5.3, you will (instead) need to compute the average loss 
-        #at each time-step separately. 
-        loss = loss_fn(outputs.contiguous().view(-1, model.vocab_size), tt)
-        costs += loss.data.item() * model.seq_len
-        losses.append(costs)
-        iters += model.seq_len
-        if args.debug:
-            print(step, loss)
-        if is_train:  # Only update parameters if training 
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
-            if args.optimizer == 'ADAM':
-                optimizer.step()
-            else: 
-                for p in model.parameters():
-                    if p.grad is not None:
-                        p.data.add_(-lr, p.grad.data)
-            if step % (epoch_size // 10) == 10:
-                print('step: '+ str(step) + '\t' \
-                    + 'loss: '+ str(costs) + '\t' \
-                    + 'speed (wps):' + str(iters * model.batch_size / (time.time() - start_time)))
+        #at each time-step separately.
+        if num5_1:
+            with torch.no_grad():
+                output_reshape = outputs.contiguous().view(-1, model.vocab_size)
+                loss_ = nn.CrossEntropyLoss(reduction='none')
+                for i in range(model.batch_size):
+                    output_sequence = output_reshape[0+model.seq_len*i:model.seq_len+model.seq_len*i]
+                    output_sequence.requires_grad = False
+                    tt_sequence = tt[0+model.seq_len*i:model.seq_len+model.seq_len*i]
+                    tt_sequence.requires_grad = False
+                    test = loss_(output_sequence, tt_sequence)
+                    average_ts_loss += test.cpu()
+
+        else:
+            loss = loss_fn(outputs.contiguous().view(-1, model.vocab_size), tt)
+            costs += loss.data.item() * model.seq_len
+            losses.append(costs)
+            iters += model.seq_len
+            if args.debug:
+                print(step, loss)
+            if is_train:  # Only update parameters if training
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
+                if args.optimizer == 'ADAM':
+                    optimizer.step()
+                else:
+                    for p in model.parameters():
+                        if p.grad is not None:
+                            p.data.add_(-lr, p.grad.data)
+                if step % (epoch_size // 10) == 10:
+                    print('step: '+ str(step) + '\t' \
+                        + 'loss: '+ str(costs) + '\t' \
+                        + 'speed (wps):' + str(iters * model.batch_size / (time.time() - start_time)))
+    if num5_1:
+        average_ts_loss /= step*model.batch_size
+        return average_ts_loss
+
     return np.exp(costs / iters), losses
 
 
@@ -441,59 +495,74 @@ else:
 initial_wall_clock_time = time.time()
 
 # MAIN LOOP
-for epoch in range(num_epochs):
-    t0 = time.time()
-    print('\nEPOCH '+str(epoch)+' ------------------')
-    if args.optimizer == 'SGD_LR_SCHEDULE':
-        lr_decay = lr_decay_base ** max(epoch - m_flat_lr, 0)
-        lr = lr * lr_decay # decay lr if it is time
+if args.evaluate == False:
+    for epoch in range(num_epochs):
+        t0 = time.time()
+        print('\nEPOCH '+str(epoch)+' ------------------')
+        if args.optimizer == 'SGD_LR_SCHEDULE':
+            lr_decay = lr_decay_base ** max(epoch - m_flat_lr, 0)
+            lr = lr * lr_decay # decay lr if it is time
 
-    # RUN MODEL ON TRAINING DATA
-    train_ppl, train_loss = run_epoch(model, train_data, True, lr)
+        # RUN MODEL ON TRAINING DATA
+        train_ppl, train_loss = run_epoch(model, train_data, True, lr)
 
-    # RUN MODEL ON VALIDATION DATA
-    val_ppl, val_loss = run_epoch(model, valid_data)
+        # RUN MODEL ON VALIDATION DATA
+        val_ppl, val_loss, average_timestep_loss = run_epoch(model, valid_data)
+
+        # SAVE MODEL IF IT'S THE BEST SO FAR
+        if val_ppl < best_val_so_far:
+            best_val_so_far = val_ppl
+            if args.save_best:
+                print("Saving model parameters to best_params.pt")
+                torch.save(model.state_dict(), os.path.join(args.save_dir, 'best_params.pt'))
+            # NOTE ==============================================
+            # You will need to load these parameters into the same model
+            # for a couple Problems: so that you can compute the gradient
+            # of the loss w.r.t. hidden state as required in Problem 5.2
+            # and to sample from the the model as required in Problem 5.3
+            # We are not asking you to run on the test data, but if you
+            # want to look at test performance you would load the saved
+            # model and run on the test data with batch_size=1
+
+        # LOC RESULTS
+        train_ppls.append(train_ppl)
+        val_ppls.append(val_ppl)
+        train_losses.extend(train_loss)
+        val_losses.extend(val_loss)
+        times.append(time.time() - t0)
+        wall_clock_times.append(time.time() - initial_wall_clock_time)
+        log_str = 'epoch: ' + str(epoch) + '\t' \
+                + 'train ppl: ' + str(train_ppl) + '\t' \
+                + 'val ppl: ' + str(val_ppl)  + '\t' \
+                + 'best val: ' + str(best_val_so_far) + '\t' \
+                + 'time (s) spent in epoch: ' + str(times[-1])
+        print(log_str)
+        with open (os.path.join(args.save_dir, 'log.txt'), 'a') as f_:
+            f_.write(log_str+ '\n')
+
+    # SAVE LEARNING CURVES
+    lc_path = os.path.join(args.save_dir, 'learning_curves.npy')
+    print('\nDONE\n\nSaving learning curves to '+lc_path)
+    np.save(lc_path, {'train_ppls':train_ppls,
+                      'val_ppls':val_ppls,
+                      'train_losses':train_losses,
+                      'val_losses':val_losses,
+                      'times':wall_clock_times})
+
+else:
 
 
-    # SAVE MODEL IF IT'S THE BEST SO FAR
-    if val_ppl < best_val_so_far:
-        best_val_so_far = val_ppl
-        if args.save_best:
-            print("Saving model parameters to best_params.pt")
-            torch.save(model.state_dict(), os.path.join(args.save_dir, 'best_params.pt'))
-        # NOTE ==============================================
-        # You will need to load these parameters into the same model
-        # for a couple Problems: so that you can compute the gradient 
-        # of the loss w.r.t. hidden state as required in Problem 5.2
-        # and to sample from the the model as required in Problem 5.3
-        # We are not asking you to run on the test data, but if you 
-        # want to look at test performance you would load the saved
-        # model and run on the test data with batch_size=1
+    model.load_state_dict(torch.load(os.path.join("problem4\\4.1\\model_gru_sgd_lr\\best_params.pt")))
+    print('\nRunning Validation on pre-trained model ------------------')
+    average_timestep_loss = run_epoch(model, valid_data, is_train=False, num5_1=True)
 
-    # LOC RESULTS
-    train_ppls.append(train_ppl)
-    val_ppls.append(val_ppl)
-    train_losses.extend(train_loss)
-    val_losses.extend(val_loss)
-    times.append(time.time() - t0)
-    wall_clock_times.append(time.time() - initial_wall_clock_time)
-    log_str = 'epoch: ' + str(epoch) + '\t' \
-            + 'train ppl: ' + str(train_ppl) + '\t' \
-            + 'val ppl: ' + str(val_ppl)  + '\t' \
-            + 'best val: ' + str(best_val_so_far) + '\t' \
-            + 'time (s) spent in epoch: ' + str(times[-1])
-    print(log_str)
-    with open (os.path.join(args.save_dir, 'log.txt'), 'a') as f_:
-        f_.write(log_str+ '\n')
+    plt.figure()
+    plt.title("Average loss per timestep, validation set")
+    plt.xlabel("Timestep")
+    plt.ylabel("Loss")
+    plt.plot(np.arange(model.seq_len), average_timestep_loss.numpy())
+    plt.show()
 
-# SAVE LEARNING CURVES
-lc_path = os.path.join(args.save_dir, 'learning_curves.npy')
-print('\nDONE\n\nSaving learning curves to '+lc_path)
-np.save(lc_path, {'train_ppls':train_ppls, 
-                  'val_ppls':val_ppls, 
-                  'train_losses':train_losses,
-                  'val_losses':val_losses,
-                  'times':wall_clock_times})
 # NOTE ==============================================
 # To load these, run 
 # >>> x = np.load(lc_path)[()]
