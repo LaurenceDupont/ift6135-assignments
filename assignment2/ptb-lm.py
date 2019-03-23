@@ -392,7 +392,7 @@ def repackage_hidden(h):
         return tuple(repackage_hidden(v) for v in h)
 
 
-def run_epoch(model, data, is_train=False, lr=1.0, num5_1=False):
+def run_epoch(model, data, is_train=False, lr=1.0, num5_1=False, num5_2=False):
     """
     One epoch of training/validation (depending on flag is_train).
     """
@@ -413,19 +413,20 @@ def run_epoch(model, data, is_train=False, lr=1.0, num5_1=False):
 
     # LOOP THROUGH MINIBATCHES
     for step, (x, y) in enumerate(ptb_iterator(data, model.batch_size, model.seq_len)):
+        if num5_1:
+            if args.model != 'TRANSFORMER':
+                hidden = model.init_hidden()
+                hidden.to(device)
         if args.model == 'TRANSFORMER':
             batch = Batch(torch.from_numpy(x).long().to(device))
             model.zero_grad()
             outputs = model.forward(batch.data, batch.mask).transpose(1,0)
             #print ("outputs.shape", outputs.shape)
         else:
-            hidden = model.init_hidden()
-            hidden.to(device)
-
             inputs = torch.from_numpy(x.astype(np.int64)).transpose(0, 1).contiguous().to(device)#.cuda()
             model.zero_grad()
             hidden = repackage_hidden(hidden)
-            outputs, hidden = model(inputs, hidden)
+            outputs, hidden, hiddens_all_ts = model(inputs, hidden)
 
         targets = torch.from_numpy(y.astype(np.int64)).transpose(0, 1).contiguous().to(device)#.cuda()
         tt = torch.squeeze(targets.view(-1, model.batch_size * model.seq_len))
@@ -444,8 +445,33 @@ def run_epoch(model, data, is_train=False, lr=1.0, num5_1=False):
                     output_sequence.requires_grad = False
                     tt_sequence = tt[0+model.seq_len*i:model.seq_len+model.seq_len*i]
                     tt_sequence.requires_grad = False
-                    test = loss_(output_sequence, tt_sequence)
-                    average_ts_loss += test.cpu()
+                    ts_loss = loss_(output_sequence, tt_sequence)
+                    average_ts_loss += ts_loss.cpu()
+
+        if num5_2:
+            loss = loss_fn(outputs.contiguous().view(-1, model.vocab_size), tt)
+            loss.backward()
+            test = hiddens_all_ts[0,0,0,0]
+            gradients = torch.autograd.grad(loss, hiddens_all_ts, retain_graph=True)
+            hidden_avg_gradient = hiddens_all_ts
+
+            # costs += loss.data.item() * model.seq_len
+            # losses.append(costs)
+            # if args.debug:
+            #     print(step, loss)
+            # if is_train:  # Only update parameters if training
+            #
+            #     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
+            #     if args.optimizer == 'ADAM':
+            #         optimizer.step()
+            #     else:
+            #         for p in model.parameters():
+            #             if p.grad is not None:
+            #                 p.data.add_(-lr, p.grad.data)
+            #     if step % (epoch_size // 10) == 10:
+            #         print('step: ' + str(step) + '\t' \
+            #               + 'loss: ' + str(costs) + '\t' \
+            #               + 'speed (wps):' + str(iters * model.batch_size / (time.time() - start_time)))
 
         else:
             loss = loss_fn(outputs.contiguous().view(-1, model.vocab_size), tt)
@@ -556,7 +582,7 @@ if args.evaluate == False:
 else:
     model.load_state_dict(torch.load(os.path.join("problem4\\4.1\\model-rnn-adam\\best_params.pt")))
     print('\nRunning Validation on pre-trained model ------------------')
-    average_timestep_loss = run_epoch(model, valid_data, is_train=False, num5_1=True)
+    average_timestep_loss = run_epoch(model, valid_data, is_train=True, num5_1=False, num5_2=True)
 
     np.save("RNN_5.1",average_timestep_loss.numpy())
     plt.figure()
