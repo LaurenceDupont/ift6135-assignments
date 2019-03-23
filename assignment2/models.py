@@ -180,7 +180,6 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
         
         Refer to figure 2 in the following paper: https://arxiv.org/pdf/1409.2329.pdf
         """
-        
         seq_len = inputs.size()[0]
         
         embedded = self.embedding(inputs)
@@ -210,6 +209,7 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
         
         return logits.view(self.seq_len, self.batch_size, self.vocab_size), torch.stack(hidden_without_dropout[-1])
 
+    # Implementation reference: https://github.com/ceshine/examples/blob/master/word_language_model/generate.py
     def generate(self, input, hidden, generated_seq_len):
         # TODO ========================
         # Compute the forward pass, as in the self.forward method (above).
@@ -235,8 +235,34 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
             - Sampled sequences of tokens
                         shape: (generated_seq_len, batch_size)
         """
+        batch_size = input.size()[0]
+
+        samples = []
         
-        return samples
+        hidden_without_dropout = []
+        
+        for timestep in range(generated_seq_len):
+            hidden_with_dropout = []
+            hidden_without_dropout.append([])
+            
+            for layer_index in range(self.num_layers):
+                input_W_x = self.dropout(self.embedding(input)) if layer_index == 0 else hidden_with_dropout[layer_index-1]
+                input_W_h = hidden[layer_index] if timestep == 0 else hidden_without_dropout[timestep-1][layer_index]
+                
+                hidden_value = self.tanh(self.W_x[layer_index](input_W_x) + self.W_h[layer_index](input_W_h))
+                
+                hidden_without_dropout[timestep].append(hidden_value)
+                hidden_with_dropout.append(self.dropout(hidden_value))
+                
+            hidden_with_dropout = torch.stack(hidden_with_dropout)
+            
+            logits_t = self.W_y(hidden_with_dropout[self.num_layers-1])
+            softmax_output = F.softmax(logits_t, dim=1)
+            pred = torch.multinomial(softmax_output, 1).view(batch_size)
+            samples.append(pred)
+            input = pred
+        
+        return torch.stack(samples)
 
 
 # Problem 2
@@ -378,6 +404,7 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
         return logits.view(self.seq_len, self.batch_size, self.vocab_size), last_hidden
 
 
+    # Implementation reference: https://github.com/ceshine/examples/blob/master/word_language_model/generate.py
     def generate(self, input, hidden, generated_seq_len):
         # TODO ========================
         # Compute the forward pass, as in the self.forward method (above).
@@ -403,28 +430,34 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
             - Sampled sequences of tokens
                         shape: (generated_seq_len, batch_size)
         """
-        hidden_last_timestep = [] # No dropout
-        hidden_current_timestep = [] # Dropout
+        batch_size = input.size()[0]
+        
         samples = []
-
-        emb_input = self.embedding(input)
-
+        
+        hidden_without_dropout = []
+        
         for timestep in range(generated_seq_len):
-            emb_current_input = self.emb_dropout(emb_input[timestep])
-            hidden_last_timestep.append([])
-            for layer in range(self.num_layers):
-                input_W_x = emb_current_input if layer == 0 else hidden_current_timestep[layer-1]
-                input_W_h = hidden[layer] if timestep == 0 else hidden_last_timestep[timestep-1][layer]
-
-                dropout_output, output = self.core[layer](input_W_x, input_W_h)
-                hidden_last_timestep[timestep].append(output)
-                hidden_current_timestep.append(dropout_output)
-
-            softmax_output = F.softmax(self.out(hidden_current_timestep[-1]), dim=1)
-            pred = torch.argmax(softmax_output, dim=1)
+            hidden_with_dropout = []
+            hidden_without_dropout.append([])
+            
+            for layer_index in range(self.num_layers):
+                input_W_x = self.emb_dropout(self.embedding(input)) if layer_index == 0 else hidden_with_dropout[layer_index-1]
+                input_W_h = hidden[layer_index] if timestep == 0 else hidden_without_dropout[timestep-1][layer_index]
+                
+                dropout_output, output = self.core[layer_index](input_W_x, input_W_h)
+                
+                hidden_without_dropout[timestep].append(output)
+                hidden_with_dropout.append(dropout_output)
+                
+            hidden_with_dropout = torch.stack(hidden_with_dropout)
+            
+            logits_t = self.out(hidden_with_dropout[self.num_layers-1])
+            softmax_output = F.softmax(logits_t, dim=1)
+            pred = torch.multinomial(softmax_output, 1).view(batch_size)
             samples.append(pred)
-
-        return samples
+            input = pred
+        
+        return torch.stack(samples)
 
 class GRU_unit(nn.Module):
     def __init__(self, emb_size, hidden_size, batch_size, dp_keep_prob):
