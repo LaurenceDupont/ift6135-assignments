@@ -388,13 +388,17 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
             hidden_without_dropout.append([])
             
             for layer_index in range(self.num_layers):
+
                 input_W_x = self.emb_dropout(embedded[timestep]) if layer_index == 0 else hidden_with_dropout[layer_index-1]
                 input_W_h = hidden[layer_index] if timestep == 0 else hidden_without_dropout[timestep-1][layer_index]
-                
+
                 output = self.core[layer_index](input_W_x, input_W_h)
+                output.retain_grad()
                 
                 hidden_without_dropout[timestep].append(output)
-                hidden_with_dropout.append(self.dropout(output))
+                dropout_output = self.dropout(output)
+                dropout_output.retain_grad()
+                hidden_with_dropout.append(dropout_output)
                 
             hidden_with_dropout = torch.stack(hidden_with_dropout)
             
@@ -406,7 +410,6 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
 
         # Num 5.2
         hiddens = torch.stack([torch.stack(hidden_without_dropout[i]) for i in range(self.seq_len)])
-        hiddens.require_grad = True
 
         return logits.view(self.seq_len, self.batch_size, self.vocab_size), last_hidden, hiddens
 
