@@ -6,12 +6,12 @@ dp_keep_prob    0.9
 emb_size    200
 evaluate    False
 hidden_size    512
-initial_lr    0.001
+initial_lr    0.0001
 model    TRANSFORMER
 num_epochs    40
 num_layers    3
 optimizer    ADAM
 save_best    False
-save_dir    TRANSFORMER_ADAM_1
+save_dir    TRANSFORMER_ADAM_23
 seed    1111
 seq_len    35
