@@ -763,7 +763,7 @@ def make_model(vocab_size, n_blocks=6,
                n_units=512, n_heads=16, dropout=0.1):
     "Helper: Construct a model from hyperparameters."
     c = copy.deepcopy
-    attn = MultiHeadedAttention(n_heads, n_units)
+    attn = MultiHeadedAttention(n_heads, n_units, dropout)
     ff = MLP(n_units, dropout)
     position = PositionalEncoding(n_units, dropout)
     model = FullTransformer(

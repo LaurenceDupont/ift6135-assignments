@@ -322,7 +322,7 @@ if args.evaluate == False:
     else:
       print("Model type not recognized.")
 else:
-    exp_config = open(os.path.join("problem4\\4.1\\model_gru_sgd_lr\\exp_config.txt"), "r")
+    exp_config = open(os.path.join("problem4\\4.1\\model-rnn-adam\\exp_config.txt"), "r")
     file = {}
     for line in exp_config:
         key, value = line.split()
@@ -330,8 +330,8 @@ else:
     if args.model == 'RNN':
         model = RNN(emb_size=int(file["emb_size"]), hidden_size=int(file["hidden_size"]),
                     seq_len=int(file["seq_len"]), batch_size=int(file["batch_size"]),
-                    vocab_size=vocab_size, num_layers=float(file["num_layers"]),
-                    dp_keep_prob=int(file["dp_keep_prob"]))
+                    vocab_size=vocab_size, num_layers=int(file["num_layers"]),
+                    dp_keep_prob=float(file["dp_keep_prob"]))
     elif args.model == 'GRU':
         model = GRU(emb_size=int(file["emb_size"]), hidden_size=int(file["hidden_size"]),
                     seq_len=int(file["seq_len"]), batch_size=int(file["batch_size"]),
@@ -413,14 +413,15 @@ def run_epoch(model, data, is_train=False, lr=1.0, num5_1=False):
 
     # LOOP THROUGH MINIBATCHES
     for step, (x, y) in enumerate(ptb_iterator(data, model.batch_size, model.seq_len)):
-        if num5_1:
-            model.init_hidden()
         if args.model == 'TRANSFORMER':
             batch = Batch(torch.from_numpy(x).long().to(device))
             model.zero_grad()
             outputs = model.forward(batch.data, batch.mask).transpose(1,0)
             #print ("outputs.shape", outputs.shape)
         else:
+            hidden = model.init_hidden()
+            hidden.to(device)
+
             inputs = torch.from_numpy(x.astype(np.int64)).transpose(0, 1).contiguous().to(device)#.cuda()
             model.zero_grad()
             hidden = repackage_hidden(hidden)
@@ -553,10 +554,11 @@ if args.evaluate == False:
                       'times':wall_clock_times})
 
 else:
-    model.load_state_dict(torch.load(os.path.join("problem4\\4.1\\model_gru_sgd_lr\\best_params.pt")))
+    model.load_state_dict(torch.load(os.path.join("problem4\\4.1\\model-rnn-adam\\best_params.pt")))
     print('\nRunning Validation on pre-trained model ------------------')
     average_timestep_loss = run_epoch(model, valid_data, is_train=False, num5_1=True)
 
+    np.save("RNN_5.1",average_timestep_loss.numpy())
     plt.figure()
     plt.title("Average loss per timestep, validation set")
     plt.xlabel("Timestep")
