@@ -322,7 +322,7 @@ if args.evaluate == False:
     else:
       print("Model type not recognized.")
 else:
-    exp_config = open(os.path.join("problem4\\4.1\\model-rnn-adam\\exp_config.txt"), "r")
+    exp_config = open(os.path.join("problem4\\4.1\\model-gru-sgd-lr\\exp_config.txt"), "r")
     file = {}
     for line in exp_config:
         key, value = line.split()
@@ -580,7 +580,7 @@ if args.evaluate == False:
                       'times':wall_clock_times})
 
 else:
-    model.load_state_dict(torch.load(os.path.join("problem4\\4.1\\model-rnn-adam\\best_params.pt")))
+    model.load_state_dict(torch.load(os.path.join("problem4\\4.1\\model-gru-sgd-lr\\best_params.pt")))
     print('\nRunning Validation on pre-trained model ------------------')
     average_timestep_loss = run_epoch(model, valid_data, is_train=True, num5_1=False, num5_2=True)
 
