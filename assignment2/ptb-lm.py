@@ -413,6 +413,8 @@ def run_epoch(model, data, is_train=False, lr=1.0, num5_1=False):
 
     # LOOP THROUGH MINIBATCHES
     for step, (x, y) in enumerate(ptb_iterator(data, model.batch_size, model.seq_len)):
+        if num5_1:
+            model.init_hidden()
         if args.model == 'TRANSFORMER':
             batch = Batch(torch.from_numpy(x).long().to(device))
             model.zero_grad()
