@@ -206,8 +206,11 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
             logits.append(logits_t)
         
         logits = torch.stack(logits)
+
+        # Num 5.2
+        hiddens = torch.stack(hidden_without_dropout)
         
-        return logits.view(self.seq_len, self.batch_size, self.vocab_size), torch.stack(hidden_without_dropout[-1])
+        return logits.view(self.seq_len, self.batch_size, self.vocab_size), torch.stack(hidden_without_dropout[-1]), hiddens
 
     # Implementation reference: https://github.com/ceshine/examples/blob/master/word_language_model/generate.py
     def generate(self, input, hidden, generated_seq_len):
@@ -305,7 +308,7 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
             core.extend([GRU_unit(self.hidden_size, self.hidden_size, self.batch_size, self.dp_keep_prob).to(device) for i in range(num_layers-1)])
 
         self.core = nn.ModuleList(core)
-
+        self.dropout = nn.Dropout(p=(1-self.dp_keep_prob))
         self.out = nn.Linear(hidden_size, vocab_size)
 
         self.init_weights_uniform()
@@ -388,10 +391,10 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
                 input_W_x = self.emb_dropout(embedded[timestep]) if layer_index == 0 else hidden_with_dropout[layer_index-1]
                 input_W_h = hidden[layer_index] if timestep == 0 else hidden_without_dropout[timestep-1][layer_index]
                 
-                dropout_output, output = self.core[layer_index](input_W_x, input_W_h)
+                output = self.core[layer_index](input_W_x, input_W_h)
                 
                 hidden_without_dropout[timestep].append(output)
-                hidden_with_dropout.append(dropout_output)
+                hidden_with_dropout.append(self.dropout(output))
                 
             hidden_with_dropout = torch.stack(hidden_with_dropout)
             
@@ -400,8 +403,12 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
         
         logits = torch.stack(logits)
         last_hidden = torch.stack(hidden_without_dropout[-1])
-        
-        return logits.view(self.seq_len, self.batch_size, self.vocab_size), last_hidden
+
+        # Num 5.2
+        hiddens = torch.stack([torch.stack(hidden_without_dropout[i]) for i in range(self.seq_len)])
+        hiddens.require_grad = True
+
+        return logits.view(self.seq_len, self.batch_size, self.vocab_size), last_hidden, hiddens
 
 
     # Implementation reference: https://github.com/ceshine/examples/blob/master/word_language_model/generate.py
@@ -444,10 +451,10 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
                 input_W_x = self.emb_dropout(self.embedding(input)) if layer_index == 0 else hidden_with_dropout[layer_index-1]
                 input_W_h = hidden[layer_index] if timestep == 0 else hidden_without_dropout[timestep-1][layer_index]
                 
-                dropout_output, output = self.core[layer_index](input_W_x, input_W_h)
+                output = self.core[layer_index](input_W_x, input_W_h)
                 
                 hidden_without_dropout[timestep].append(output)
-                hidden_with_dropout.append(dropout_output)
+                hidden_with_dropout.append(self.dropout(output))
                 
             hidden_with_dropout = torch.stack(hidden_with_dropout)
             
@@ -481,8 +488,6 @@ class GRU_unit(nn.Module):
 
         self.ones = torch.ones(self.hidden_size, dtype=torch.float).to(device)
 
-        self.dropout = nn.Dropout(p=(1-self.dp_keep_prob))
-
     def init_weights(self, k=None):
         if k is None:
             return
@@ -505,7 +510,7 @@ class GRU_unit(nn.Module):
         htilde = self.htilde_act(self.htilde_input(input) + self.htilde_hidden(torch.mul(hidden, rt)))
         h = (self.ones - zt) * hidden + zt * htilde
         # h = torch.mul((torch.ones((input.size()[0], self.hidden_size), dtype=torch.float).to(device).sub(zt)),hidden).add(torch.mul(zt,htilde))
-        return self.dropout(h), h
+        return h
 
 
 # Problem 3
