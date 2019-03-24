@@ -92,8 +92,9 @@ np = numpy
 
 # NOTE ==============================================
 # This is where your models are imported
-from models import RNN, GRU
-from models import make_model as TRANSFORMER
+import assignment2.models as models
+from assignment2.models import RNN, GRU, initialize_globals
+from assignment2.models import make_model as TRANSFORMER
 
 import matplotlib.pyplot as plt
 
@@ -293,69 +294,38 @@ print('  vocabulary size: {}'.format(vocab_size))
 # This is where your model code will be called. You may modify this code
 # if required for your implementation, but it should not typically be necessary,
 # and you must let the TAs know if you do so.
-if args.evaluate == False:
-    if args.model == 'RNN':
-        model = RNN(emb_size=args.emb_size, hidden_size=args.hidden_size,
-                    seq_len=args.seq_len, batch_size=args.batch_size,
-                    vocab_size=vocab_size, num_layers=args.num_layers,
-                    dp_keep_prob=args.dp_keep_prob)
-    elif args.model == 'GRU':
-        model = GRU(emb_size=args.emb_size, hidden_size=args.hidden_size,
-                    seq_len=args.seq_len, batch_size=args.batch_size,
-                    vocab_size=vocab_size, num_layers=args.num_layers,
-                    dp_keep_prob=args.dp_keep_prob)
-    elif args.model == 'TRANSFORMER':
-        if args.debug:  # use a very small model
-            model = TRANSFORMER(vocab_size=vocab_size, n_units=16, n_blocks=2)
-        else:
-            # Note that we're using num_layers and hidden_size to mean slightly
-            # different things here than in the RNNs.
-            # Also, the Transformer also has other hyperparameters
-            # (such as the number of attention heads) which can change it's behavior.
-            model = TRANSFORMER(vocab_size=vocab_size, n_units=args.hidden_size,
-                                n_blocks=args.num_layers, dropout=1.-args.dp_keep_prob)
-        # these 3 attributes don't affect the Transformer's computations;
-        # they are only used in run_epoch
-        model.batch_size=args.batch_size
-        model.seq_len=args.seq_len
-        model.vocab_size=vocab_size
+if args.model == 'RNN':
+    model = RNN(emb_size=args.emb_size, hidden_size=args.hidden_size,
+                seq_len=args.seq_len, batch_size=args.batch_size,
+                vocab_size=vocab_size, num_layers=args.num_layers,
+                dp_keep_prob=args.dp_keep_prob)
+elif args.model == 'GRU':
+    model = GRU(emb_size=args.emb_size, hidden_size=args.hidden_size,
+                seq_len=args.seq_len, batch_size=args.batch_size,
+                vocab_size=vocab_size, num_layers=args.num_layers,
+                dp_keep_prob=args.dp_keep_prob)
+elif args.model == 'TRANSFORMER':
+    if args.debug:  # use a very small model
+        model = TRANSFORMER(vocab_size=vocab_size, n_units=16, n_blocks=2)
     else:
-      print("Model type not recognized.")
+        # Note that we're using num_layers and hidden_size to mean slightly
+        # different things here than in the RNNs.
+        # Also, the Transformer also has other hyperparameters
+        # (such as the number of attention heads) which can change it's behavior.
+        model = TRANSFORMER(vocab_size=vocab_size, n_units=args.hidden_size,
+                            n_blocks=args.num_layers, dropout=1.-args.dp_keep_prob)
+    # these 3 attributes don't affect the Transformer's computations;
+    # they are only used in run_epoch
+    model.batch_size=args.batch_size
+    model.seq_len=args.seq_len
+    model.vocab_size=vocab_size
+
 else:
-    exp_config = open(os.path.join("problem4\\4.1\\model-gru-sgd-lr\\exp_config.txt"), "r")
-    file = {}
-    for line in exp_config:
-        key, value = line.split()
-        file[key] = value
-    if args.model == 'RNN':
-        model = RNN(emb_size=int(file["emb_size"]), hidden_size=int(file["hidden_size"]),
-                    seq_len=int(file["seq_len"]), batch_size=int(file["batch_size"]),
-                    vocab_size=vocab_size, num_layers=int(file["num_layers"]),
-                    dp_keep_prob=float(file["dp_keep_prob"]))
-    elif args.model == 'GRU':
-        model = GRU(emb_size=int(file["emb_size"]), hidden_size=int(file["hidden_size"]),
-                    seq_len=int(file["seq_len"]), batch_size=int(file["batch_size"]),
-                    vocab_size=vocab_size, num_layers=int(file["num_layers"]),
-                    dp_keep_prob=float(file["dp_keep_prob"]))
-    elif args.model == 'TRANSFORMER':
-        if args.debug:  # use a very small model
-            model = TRANSFORMER(vocab_size=vocab_size, n_units=16, n_blocks=2)
-        else:
-            # Note that we're using num_layers and hidden_size to mean slightly
-            # different things here than in the RNNs.
-            # Also, the Transformer also has other hyperparameters
-            # (such as the number of attention heads) which can change it's behavior.
-            model = TRANSFORMER(vocab_size=vocab_size, n_units=int(file["hidden_size"]),
-                                n_blocks=int(file["num_layers"]), dropout=1.-float(file["dp_keep_prob"]))
-        # these 3 attributes don't affect the Transformer's computations;
-        # they are only used in run_epoch
-        model.batch_size=int(file["batch_size"])
-        model.seq_len=int(file["seq_len"])
-        model.vocab_size=vocab_size
-    else:
-      print("Model type not recognized.")
+  print("Model type not recognized.")
 
 model.to(device)
+
+
 
 # LOSS FUNCTION
 loss_fn = nn.CrossEntropyLoss()
@@ -396,6 +366,9 @@ def run_epoch(model, data, is_train=False, lr=1.0, num5_1=False, num5_2=False):
     """
     One epoch of training/validation (depending on flag is_train).
     """
+    # 5.2 workaround -- regular grad() functions didn't work
+    initialize_globals()
+
     if num5_1:
         average_ts_loss = torch.zeros(model.seq_len)
     if is_train:
@@ -426,7 +399,8 @@ def run_epoch(model, data, is_train=False, lr=1.0, num5_1=False, num5_2=False):
             inputs = torch.from_numpy(x.astype(np.int64)).transpose(0, 1).contiguous().to(device)#.cuda()
             model.zero_grad()
             hidden = repackage_hidden(hidden)
-            outputs, hidden, hiddens_all_ts = model(inputs, hidden)
+
+            outputs, hidden = model(inputs, hidden)
 
         targets = torch.from_numpy(y.astype(np.int64)).transpose(0, 1).contiguous().to(device)#.cuda()
         tt = torch.squeeze(targets.view(-1, model.batch_size * model.seq_len))
@@ -449,29 +423,18 @@ def run_epoch(model, data, is_train=False, lr=1.0, num5_1=False, num5_2=False):
                     average_ts_loss += ts_loss.cpu()
 
         if num5_2:
-            loss = loss_fn(outputs.contiguous().view(-1, model.vocab_size), tt)
+            tt = torch.stack([tt[(model.seq_len-1)*(i+1)] for i in range(model.batch_size)])
+            loss = loss_fn(outputs[-1].contiguous().view(-1, model.vocab_size), tt)
             loss.backward()
-            test = hiddens_all_ts[0,0,0,0]
-            gradients = torch.autograd.grad(loss, hiddens_all_ts, retain_graph=True)
-            hidden_avg_gradient = hiddens_all_ts
-
-            # costs += loss.data.item() * model.seq_len
-            # losses.append(costs)
-            # if args.debug:
-            #     print(step, loss)
-            # if is_train:  # Only update parameters if training
-            #
-            #     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
-            #     if args.optimizer == 'ADAM':
-            #         optimizer.step()
-            #     else:
-            #         for p in model.parameters():
-            #             if p.grad is not None:
-            #                 p.data.add_(-lr, p.grad.data)
-            #     if step % (epoch_size // 10) == 10:
-            #         print('step: ' + str(step) + '\t' \
-            #               + 'loss: ' + str(costs) + '\t' \
-            #               + 'speed (wps):' + str(iters * model.batch_size / (time.time() - start_time)))
+            hidden_gradient_timestep = torch.zeros(model.seq_len, model.num_layers, model.batch_size, model.hidden_size)
+            _ = models.hidden_grad
+            for timestep in range(model.seq_len):
+                for n_layer in range(model.num_layers):
+                    hidden_gradient_timestep[timestep, n_layer] = models.hidden_grad['{}_{}'.format(timestep, n_layer)]
+            hidden_gradient_timestep = torch.mean(hidden_gradient_timestep, dim=2).view(model.seq_len, model.num_layers, model.hidden_size)
+            hidden_gradient_timestep = torch.cat((hidden_gradient_timestep[:,0,:].view(model.seq_len, model.hidden_size), hidden_gradient_timestep[:,1,:].view(model.seq_len, model.hidden_size)), dim=1)
+            hidden_gradient_timestep = torch.norm(hidden_gradient_timestep, dim=1)
+            return hidden_gradient_timestep
 
         else:
             loss = loss_fn(outputs.contiguous().view(-1, model.vocab_size), tt)
@@ -579,17 +542,85 @@ if args.evaluate == False:
                       'val_losses':val_losses,
                       'times':wall_clock_times})
 
-else:
-    model.load_state_dict(torch.load(os.path.join("problem4\\4.1\\model-gru-sgd-lr\\best_params.pt")))
-    print('\nRunning Validation on pre-trained model ------------------')
-    average_timestep_loss = run_epoch(model, valid_data, is_train=True, num5_1=False, num5_2=True)
+elif args.evaluate == True:
 
-    np.save("RNN_5.1",average_timestep_loss.numpy())
+    # Initializing best models for 5.1, 5.2 and 5.3
+
+    # RNN
+    exp_config = open(os.path.join("problem4\\4.1\\model-rnn-adam\\exp_config.txt"), "r")
+    file = {}
+    for line in exp_config:
+        key, value = line.split()
+        file[key] = value
+    model_RNN = RNN(emb_size=int(file["emb_size"]), hidden_size=int(file["hidden_size"]),
+                    seq_len=int(file["seq_len"]), batch_size=int(file["batch_size"]),
+                    vocab_size=vocab_size, num_layers=int(file["num_layers"]),
+                    dp_keep_prob=float(file["dp_keep_prob"]))
+    model_RNN.load_state_dict(torch.load(os.path.join("problem4\\4.1\\model-rnn-adam\\best_params.pt")))
+
+    # GRU
+    exp_config = open(os.path.join("problem4\\4.1\\model-gru-sgd-lr\\exp_config.txt"), "r")
+    file = {}
+    for line in exp_config:
+        key, value = line.split()
+        file[key] = value
+    model_GRU = GRU(emb_size=int(file["emb_size"]), hidden_size=int(file["hidden_size"]),
+                    seq_len=int(file["seq_len"]), batch_size=int(file["batch_size"]),
+                    vocab_size=vocab_size, num_layers=int(file["num_layers"]),
+                    dp_keep_prob=float(file["dp_keep_prob"]))
+    model_GRU.load_state_dict(torch.load(os.path.join("problem4\\4.1\\model-gru-sgd-lr\\best_params.pt")))
+
+    # # TRANSFORMER
+    # exp_config = open(os.path.join("problem4\\4.1\\model-transformer-sgd-lr\\exp_config.txt"), "r")
+    # file = {}
+    # for line in exp_config:
+    #     key, value = line.split()
+    #     file[key] = value
+    # if args.debug:  # use a very small model
+    #         model_TRANSFO = TRANSFORMER(vocab_size=vocab_size, n_units=16, n_blocks=2)
+    # else:
+    #     # Note that we're using num_layers and hidden_size to mean slightly
+    #     # different things here than in the RNNs.
+    #     # Also, the Transformer also has other hyperparameters
+    #     # (such as the number of attention heads) which can change it's behavior.
+    #     model_TRANSFO = TRANSFORMER(vocab_size=vocab_size, n_units=int(file["hidden_size"]),
+    #                         n_blocks=int(file["num_layers"]), dropout=1.-float(file["dp_keep_prob"]))
+    #     model_TRANSFO.load_state_dict(torch.load(os.path.join("problem4\\4.1\\model-transformer-sgd-lr\\best_params.pt")))
+
+    # # these 3 attributes don't affect the Transformer's computations;
+    # # they are only used in run_epoch
+    # model_TRANSFO.batch_size=int(file["batch_size"])
+    # model_TRANSFO.seq_len=int(file["seq_len"])
+    # model_TRANSFO.vocab_size=vocab_size
+
+    model_RNN.to(device)
+    model_GRU.to(device)
+    # model_TRANSFO.to(device)
+
+    print('\nRunning experiments for 5.1 and 5.2 on pre-trained model ------------------')
+    average_timestep_loss_RNN = run_epoch(model_RNN, valid_data, is_train=False, num5_1=True, num5_2=False)
+
+    np.save("RNN_5.1",average_timestep_loss_RNN.numpy())
     plt.figure()
     plt.title("Average loss per timestep, validation set")
     plt.xlabel("Timestep")
     plt.ylabel("Loss")
-    plt.plot(np.arange(model.seq_len), average_timestep_loss.numpy())
+    plt.plot(np.arange(model.seq_len), average_timestep_loss_RNN.numpy())
+    plt.show()
+
+    timestep_hidden_gradient_RNN = run_epoch(model_RNN, train_data, is_train=True, num5_1=False, num5_2=True)
+    timestep_hidden_gradient_GRU = run_epoch(model_GRU, train_data, is_train=True, num5_1=False, num5_2=True)
+
+    np.save("RNN_5.2",timestep_hidden_gradient_RNN.numpy())
+    np.save("GRU_5.2",timestep_hidden_gradient_GRU.numpy())
+
+    plt.figure(figsize=(10,4))
+    plt.title("Average Gradient Loss Norm w.r.t Concatenated Timestep Hidden States, for a single train set minibatch")
+    plt.xlabel("Timestep")
+    plt.ylabel("Gradient Loss Norm")
+    plt.plot(np.arange(model.seq_len), timestep_hidden_gradient_RNN.numpy(), label="RNN", color='blue')
+    plt.plot(np.arange(model.seq_len), timestep_hidden_gradient_GRU.numpy(), label="GRU", color='orange')
+    plt.legend()
     plt.show()
 
 # NOTE ==============================================

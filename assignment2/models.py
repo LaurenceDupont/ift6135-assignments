@@ -7,6 +7,19 @@ import math, copy, time
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
 
+## Global variable trick for 5.2 ##
+# Since autograd.grad() and backward() didn't return the gradients the way we wanted,
+# even when using retain_grad() on hidden states, we used hooks in order to get the gradients in our
+# main function.
+def initialize_globals(): # Initializiting global variables
+    global hidden_grad
+    hidden_grad = {}
+
+def save_grad(name): # Hook function
+    def hook(grad):
+        hidden_grad[name] = grad
+    return hook
+
 # NOTE ==============================================
 #
 # Fill in code for every method which has a TODO
@@ -27,6 +40,7 @@ import matplotlib.pyplot as plt
 # You should not modify the interals of the Transformer
 # except where indicated to implement the multi-head
 # attention. 
+
 
 device = None
 # Use the GPU if you have one
@@ -196,21 +210,19 @@ class RNN(nn.Module): # Implement a stacked vanilla RNN with Tanh nonlinearities
                 input_W_h = hidden[layer_index] if timestep == 0 else hidden_without_dropout[timestep-1][layer_index]
                 
                 hidden_value = self.tanh(self.W_x[layer_index](input_W_x) + self.W_h[layer_index](input_W_h))
-                
+                hidden_value.register_hook(save_grad("{}_{}".format(timestep, layer_index)))
+
                 hidden_without_dropout[timestep].append(hidden_value)
                 hidden_with_dropout.append(self.dropout(hidden_value))
                 
             hidden_with_dropout = torch.stack(hidden_with_dropout)
-            
+
             logits_t = self.W_y(hidden_with_dropout[self.num_layers-1])
             logits.append(logits_t)
         
         logits = torch.stack(logits)
-
-        # Num 5.2
-        hiddens = torch.stack(hidden_without_dropout)
         
-        return logits.view(self.seq_len, self.batch_size, self.vocab_size), torch.stack(hidden_without_dropout[-1]), hiddens
+        return logits.view(self.seq_len, self.batch_size, self.vocab_size), torch.stack(hidden_without_dropout[-1])
 
     # Implementation reference: https://github.com/ceshine/examples/blob/master/word_language_model/generate.py
     def generate(self, input, hidden, generated_seq_len):
@@ -391,14 +403,11 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
 
                 input_W_x = self.emb_dropout(embedded[timestep]) if layer_index == 0 else hidden_with_dropout[layer_index-1]
                 input_W_h = hidden[layer_index] if timestep == 0 else hidden_without_dropout[timestep-1][layer_index]
+                hidden_value = self.core[layer_index](input_W_x, input_W_h)
+                hidden_value.register_hook(save_grad("{}_{}".format(timestep, layer_index)))
 
-                output = self.core[layer_index](input_W_x, input_W_h)
-                output.retain_grad()
-                
-                hidden_without_dropout[timestep].append(output)
-                dropout_output = self.dropout(output)
-                dropout_output.retain_grad()
-                hidden_with_dropout.append(dropout_output)
+                hidden_without_dropout[timestep].append(hidden_value)
+                hidden_with_dropout.append(self.dropout(hidden_value))
                 
             hidden_with_dropout = torch.stack(hidden_with_dropout)
             
@@ -408,10 +417,7 @@ class GRU(nn.Module): # Implement a stacked GRU RNN
         logits = torch.stack(logits)
         last_hidden = torch.stack(hidden_without_dropout[-1])
 
-        # Num 5.2
-        hiddens = torch.stack([torch.stack(hidden_without_dropout[i]) for i in range(self.seq_len)])
-
-        return logits.view(self.seq_len, self.batch_size, self.vocab_size), last_hidden, hiddens
+        return logits.view(self.seq_len, self.batch_size, self.vocab_size), last_hidden
 
 
     # Implementation reference: https://github.com/ceshine/examples/blob/master/word_language_model/generate.py
@@ -512,7 +518,6 @@ class GRU_unit(nn.Module):
         zt = self.zt_act(self.zt_input(input) + self.zt_hidden(hidden))
         htilde = self.htilde_act(self.htilde_input(input) + self.htilde_hidden(torch.mul(hidden, rt)))
         h = (self.ones - zt) * hidden + zt * htilde
-        # h = torch.mul((torch.ones((input.size()[0], self.hidden_size), dtype=torch.float).to(device).sub(zt)),hidden).add(torch.mul(zt,htilde))
         return h
 
 
