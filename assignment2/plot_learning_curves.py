@@ -26,20 +26,29 @@ args = parser.parse_args()
 #
 ##############################################################################
 
+Y_AXIS_MAX = 10000
+
 def load_data(filename):
     return np.load(filename)[()]
 
-def plot_epoch_learning_curves(save_dir, exp_name, plot_data):
+def plot_epoch_learning_curves(save_dir, exp_name, plot_data, y_axis_max=Y_AXIS_MAX):
     plot_filename = save_dir + exp_name + '-epochs.png'
     
     fig = plt.figure()
     
+    overall_max_ppl = 0
+    
     for data in plot_data:
+        max_ppl = max(data['ppls'])
+        if max_ppl > overall_max_ppl:
+            overall_max_ppl = max_ppl
         plt.plot(np.arange(0,len(data['ppls']),1), data['ppls'], label=data['label'])
 
     plt.title("Perplexity by Epoch")
     plt.xlabel("Epoch")
     plt.ylabel("Perplexity")
+    if overall_max_ppl > y_axis_max:
+        plt.ylim(0, y_axis_max)
     plt.legend()
     print()
     print(plot_filename)
@@ -47,17 +56,24 @@ def plot_epoch_learning_curves(save_dir, exp_name, plot_data):
     
     fig.savefig(plot_filename)
     
-def plot_wall_clock_time_learning_curves(save_dir, exp_name, plot_data):
+def plot_wall_clock_time_learning_curves(save_dir, exp_name, plot_data, y_axis_max=Y_AXIS_MAX):
     plot_filename = save_dir + exp_name + '-time.png'
     
     fig = plt.figure()
     
+    overall_max_ppl = 0
+    
     for data in plot_data:
+        max_ppl = max(data['ppls'])
+        if max_ppl > overall_max_ppl:
+            overall_max_ppl = max_ppl
         plt.plot(data['times'], data['ppls'], label=data['label'])
 
     plt.title("Perplexity by Wall-Clock Time")
     plt.xlabel("Wall-Clock Time (s)")
     plt.ylabel("Perplexity")
+    if overall_max_ppl > y_axis_max:
+        plt.ylim(0, y_axis_max)
     plt.legend()
     print()
     print(plot_filename)
@@ -73,9 +89,9 @@ def plot_train_val_learning_curves(save_dir, exp_name, train_ppls, val_ppls, tim
     plot_wall_clock_time_learning_curves(save_dir, exp_name, plot_data)
 
 # Models and optimizers learning curves
-def plot_val_learning_curves(save_dir, exp_name, plot_data):
-    plot_epoch_learning_curves(save_dir, exp_name, plot_data)
-    plot_wall_clock_time_learning_curves(save_dir, exp_name, plot_data)
+def plot_val_learning_curves(save_dir, exp_name, plot_data, y_axis_max=Y_AXIS_MAX):
+    plot_epoch_learning_curves(save_dir, exp_name, plot_data, y_axis_max)
+    plot_wall_clock_time_learning_curves(save_dir, exp_name, plot_data, y_axis_max)
 
 
 DATA_FILENAME = 'learning_curves.npy'
@@ -119,10 +135,10 @@ for filename in glob.iglob(args.exp_dir + '/**', recursive=True):
                 
             plot_train_val_learning_curves(save_dir, exp_name, train_ppls, val_ppls, times)
 
-plot_val_learning_curves(save_dir, 'rnn-summary', rnn_plot_data)
-plot_val_learning_curves(save_dir, 'gru-summary', gru_plot_data)
-plot_val_learning_curves(save_dir, 'transformer-summary', transformer_plot_data)
+plot_val_learning_curves(save_dir, 'rnn-summary', rnn_plot_data, 1000)
+plot_val_learning_curves(save_dir, 'gru-summary', gru_plot_data, 1000)
+plot_val_learning_curves(save_dir, 'transformer-summary', transformer_plot_data, 1000)
 
-plot_val_learning_curves(save_dir, 'sgd-lr-summary', sgd_lr_plot_data)
-plot_val_learning_curves(save_dir, 'sgd-summary', sgd_plot_data)
-plot_val_learning_curves(save_dir, 'adam-summary', adam_plot_data)
+plot_val_learning_curves(save_dir, 'sgd-lr-summary', sgd_lr_plot_data, 1000)
+plot_val_learning_curves(save_dir, 'sgd-summary', sgd_plot_data, 5000)
+plot_val_learning_curves(save_dir, 'adam-summary', adam_plot_data, 1000)
