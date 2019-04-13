@@ -14,10 +14,10 @@ from torchvision.utils import save_image
 def get_data_loader(batch_size):
     def lines_to_np_array(lines):
         return np.array([[int(i) for i in line.split()] for line in lines])
-    with open(os.path.join('datasets', 'MNIST_static', 'binarized_mnist_train.amat')) as f:
+    with open(os.path.join('datasets', 'MNIST_static', 'binarized_mnist_train.amat')) as f:#open("C:\\Users\\Game\\AI\\ift6135-assignments\\assignment3\\datasets\\MNIST_static\\binarized_mnist_train.amat") as f:
         lines = f.readlines()
     x_train = lines_to_np_array(lines).astype('float32')
-    with open(os.path.join('datasets', 'MNIST_static', 'binarized_mnist_valid.amat')) as f:
+    with open(os.path.join('datasets', 'MNIST_static', 'binarized_mnist_valid.amat')) as f:#open("C:\\Users\\Game\\AI\\ift6135-assignments\\assignment3\\datasets\\MNIST_static\\binarized_mnist_valid.amat") as f:
         lines = f.readlines()
     x_val = lines_to_np_array(lines).astype('float32')
 #    with open(os.path.join('datasets', 'MNIST_static', 'binarized_mnist_test.amat')) as f:
@@ -57,7 +57,7 @@ class VAE(nn.Module):
     def __init__(self):
         super(VAE, self).__init__()
         
-        self.bce = nn.BCEWithLogitsLoss()
+        self.bce = nn.BCEWithLogitsLoss(reduction='sum')
         
         self.encoder = nn.Sequential(
             nn.Conv2d(1, 32, 3),
@@ -107,14 +107,13 @@ class VAE(nn.Module):
         q_parameters = self.encoder_fc(self.encoder(x).squeeze())
         mu, log_sigma = q_parameters[:, :self.DIMENSION_Z], q_parameters[:, self.DIMENSION_Z:]
         z = self.reparameterize(mu, log_sigma)
-        x_ = F.sigmoid(self.decoder(self.decoder_fc(z).unsqueeze(2).unsqueeze(3))) #self.decoder(self.decoder_fc(z).unsqueeze(2).unsqueeze(3))
+        x_ = self.decoder(self.decoder_fc(z).unsqueeze(2).unsqueeze(3))
         
         return x_, mu, log_sigma
 
     # Source: https://github.com/pytorch/examples/blob/master/vae/main.py
     def loss_function(self, recon_x, x, mu, log_sigma):
-        BCE = F.binary_cross_entropy(recon_x, x, reduction='sum')
-        #BCE = self.bce(recon_x, x)
+        BCE = self.bce(recon_x, x)
         # see Appendix B from VAE paper:
         # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
         # https://arxiv.org/abs/1312.6114
@@ -134,7 +133,9 @@ def evaluate(vae, dataset):
                 x = x.cuda()
                 y = y.cuda()
 
-            c = (vae(x).argmax(dim=-1) == y).sum().item()
+            x_, mu, log_sigma = vae(x)
+            out = F.sigmoid(x)
+            c = (out.argmax(dim=-1) == y).sum().item()
             t = x.size(0)
             correct += c
             total += t
@@ -162,7 +163,7 @@ for epoch in range(20):
         
         if i == 0:
             n = min(x.size(0), 8)
-            comparison = torch.cat([x[:n], x_[:n]]) # torch.cat([x[:n], F.sigmoid(x_[:n])])
+            comparison = torch.cat([x[:n], F.sigmoid(x_[:n])]) # torch.cat([x[:n], F.sigmoid(x_[:n])])
             save_image(comparison.cpu(), 'vae_results/reconstruction_' + str(epoch) + '.png', nrow=n)
 
         loss = vae.loss_function(x_.squeeze().view(-1, 784), x.squeeze().view(-1, 784), mu, log_sigma)
@@ -171,7 +172,8 @@ for epoch in range(20):
         optimizer.zero_grad()
         if (i + 1) % 100 == 0:
             print(loss.item())
-    #acc = evaluate(vae, valid)
+            
+    acc = evaluate(vae, valid)
     #print("Validation acc:", acc,)
 
     #if acc > best_acc:
