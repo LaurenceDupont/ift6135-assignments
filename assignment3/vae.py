@@ -126,27 +126,21 @@ class VAE(nn.Module):
 def evaluate(vae, dataset):
     with torch.no_grad():
         vae.eval()
-        correct = 0.
-        total = 0.
+
         for x, y in dataset:
             if cuda:
                 x = x.cuda()
                 y = y.cuda()
 
-            x_, mu, log_sigma = vae(x)
-            out = F.sigmoid(x)
-            c = (out.argmax(dim=-1) == y).sum().item()
-            t = x.size(0)
-            correct += c
-            total += t
-    acc = correct / float(total)
-    return acc
+            x_, mu, log_sigma = vae(x.reshape((-1, 1, 28, 28)))
+            
+        loss = vae.loss_function(x_.squeeze().view(-1, 784), x.squeeze().view(-1, 784), mu, log_sigma)
+        return loss.item()
+
 
 vae = VAE()
 params = vae.parameters()
 optimizer = Adam(params, lr=3e-4)
-ce = nn.CrossEntropyLoss()
-best_acc = 0.
 cuda = torch.cuda.is_available()
 if cuda:
     vae = vae.cuda()
@@ -163,7 +157,7 @@ for epoch in range(20):
         
         if i == 0:
             n = min(x.size(0), 8)
-            comparison = torch.cat([x[:n], F.sigmoid(x_[:n])]) # torch.cat([x[:n], F.sigmoid(x_[:n])])
+            comparison = torch.cat([x[:n], F.sigmoid(x_[:n])])
             save_image(comparison.cpu(), 'vae_results/reconstruction_' + str(epoch) + '.png', nrow=n)
 
         loss = vae.loss_function(x_.squeeze().view(-1, 784), x.squeeze().view(-1, 784), mu, log_sigma)
@@ -173,8 +167,5 @@ for epoch in range(20):
         if (i + 1) % 100 == 0:
             print(loss.item())
             
-    acc = evaluate(vae, valid)
-    #print("Validation acc:", acc,)
-
-    #if acc > best_acc:
-    #    best_acc = acc
+    valid_loss = evaluate(vae, valid)
+    print("Validation loss:", valid_loss)
