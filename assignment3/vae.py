@@ -25,6 +25,7 @@ def get_data_loader(batch_size):
 #    x_test = lines_to_np_array(lines).astype('float32')
 
     # shuffle train data
+    np.random.seed(0)
     np.random.shuffle(x_train)
 
     # idle y's
@@ -111,31 +112,36 @@ class VAE(nn.Module):
         
         return x_, mu, log_sigma
 
-    # Source: https://github.com/pytorch/examples/blob/master/vae/main.py
+    # References:
+    # https://github.com/pytorch/examples/blob/master/vae/main.py
+    # https://github.com/Lasagne/Recipes/blob/master/examples/variational_autoencoder/variational_autoencoder.py
     def loss_function(self, recon_x, x, mu, log_sigma):
-        BCE = self.bce(recon_x, x)
-        # see Appendix B from VAE paper:
-        # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
-        # https://arxiv.org/abs/1312.6114
-        # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
-        KLD = -0.5 * torch.sum(1 + log_sigma - mu.pow(2) - log_sigma.exp())
+        BCE = -self.bce(recon_x, x)
+        
+        KLD = -0.5 * torch.sum(1 + 2 * log_sigma - mu.pow(2) - (2 * log_sigma).exp())
     
-        return BCE + KLD
+        return -(BCE - KLD) / MINI_BATCH_SIZE
 
 
 def evaluate(vae, dataset):
     with torch.no_grad():
         vae.eval()
-
-        for x, y in dataset:
+        
+        mini_batches_count = len(dataset)
+        
+        total_loss = 0
+        
+        for i, (x, y) in enumerate(dataset):
             if cuda:
                 x = x.cuda()
                 y = y.cuda()
 
             x_, mu, log_sigma = vae(x.reshape((-1, 1, 28, 28)))
             
-        loss = vae.loss_function(x_.squeeze().view(-1, 784), x.squeeze().view(-1, 784), mu, log_sigma)
-        return loss.item()
+            loss = vae.loss_function(x_.squeeze().view(-1, 784), x.squeeze().view(-1, 784), mu, log_sigma)
+            total_loss += loss.item()
+            
+        return total_loss / mini_batches_count
 
 
 vae = VAE()
