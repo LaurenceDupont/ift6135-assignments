@@ -30,7 +30,7 @@ class W_Discriminator(nn.Module):
             #nn.Sigmoid() # TODO I need to check if this ok...
         )
 
-        self.optim = torch.optim.Adam(self.discriminator.parameters(), lr=lr, weight_decay=0.00001)
+        self.optim = torch.optim.Adam(self.discriminator.parameters(), lr=lr)
     
 
     def forward(self, x):
@@ -74,11 +74,12 @@ class W_Discriminator(nn.Module):
 
 D = W_Discriminator().to(DEVICE)
 mone = torch.FloatTensor([-1]).to(DEVICE)
-max_epoch = 20
-batch_size = 512
-for epoch in range(max_epoch):
-    first_x = torch.FloatTensor(batch_size).uniform_(0,1).to(DEVICE)
-    second_x = torch.FloatTensor(batch_size).uniform_(0,1).to(DEVICE)
+batch_size = 100
+sample_size = 512
+n_critic = 10
+for crit in range(n_critic):
+    first_x = torch.FloatTensor(batch_size, sample_size).normal_(0,1).to(DEVICE)
+    second_x = torch.FloatTensor(batch_size, sample_size).normal_(3,1).to(DEVICE)
 
     D.optim.zero_grad()
     x_real = D(first_x)
