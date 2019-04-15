@@ -1,55 +1,43 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #%%
+import numpy as np
+import os
+
 import torch
 from torch import nn
 from torch.optim import Adam
 from torch.nn import functional as F
-import numpy as np
-import os
 import torch.utils.data as data_utils
 from torchvision.utils import save_image
-#%%
-# Source: https://github.com/jmtomczak/vae_vpflows/blob/master/utils/load_data.py
-def get_data_loader(batch_size):
+
+def get_data_loader(dataset_location, batch_size):
+    # start processing
     def lines_to_np_array(lines):
         return np.array([[int(i) for i in line.split()] for line in lines])
-    with open(os.path.join('datasets', 'MNIST_static', 'binarized_mnist_train.amat')) as f:#open("C:\\Users\\Game\\AI\\ift6135-assignments\\assignment3\\datasets\\MNIST_static\\binarized_mnist_train.amat") as f:
-        lines = f.readlines()
-    x_train = lines_to_np_array(lines).astype('float32')
-    with open(os.path.join('datasets', 'MNIST_static', 'binarized_mnist_valid.amat')) as f:#open("C:\\Users\\Game\\AI\\ift6135-assignments\\assignment3\\datasets\\MNIST_static\\binarized_mnist_valid.amat") as f:
-        lines = f.readlines()
-    x_val = lines_to_np_array(lines).astype('float32')
-#    with open(os.path.join('datasets', 'MNIST_static', 'binarized_mnist_test.amat')) as f:
-#        lines = f.readlines()
-#    x_test = lines_to_np_array(lines).astype('float32')
+    splitdata = []
+    for splitname in ["train", "valid", "test"]:
+        filename = "binarized_mnist_%s.amat" % splitname
+        filepath = os.path.join(dataset_location, filename)
+        with open(filepath) as f:
+            lines = f.readlines()
+        x = lines_to_np_array(lines).astype('float32')
+        x = x.reshape(x.shape[0], 1, 28, 28)
+        # pytorch data loader
+        dataset = data_utils.TensorDataset(torch.from_numpy(x))
+        dataset_loader = data_utils.DataLoader(dataset, batch_size=batch_size, shuffle=splitname == "train")
+        splitdata.append(dataset_loader)
+    return splitdata
 
-    # shuffle train data
-    np.random.seed(0)
-    np.random.shuffle(x_train)
-
-    # idle y's
-    y_train = np.zeros( (x_train.shape[0], 1) )
-    y_val = np.zeros( (x_val.shape[0], 1) )
-    #y_test = np.zeros( (x_test.shape[0], 1) )
-
-    # pytorch data loader
-    train = data_utils.TensorDataset(torch.from_numpy(x_train), torch.from_numpy(y_train))
-    train_loader = data_utils.DataLoader(train, batch_size=batch_size, shuffle=True)
-
-    validation = data_utils.TensorDataset(torch.from_numpy(x_val).float(), torch.from_numpy(y_val))
-    val_loader = data_utils.DataLoader(validation, batch_size=batch_size, shuffle=False)
-
-    #test = data_utils.TensorDataset(torch.from_numpy(x_test).float(), torch.from_numpy(y_test))
-    #test_loader = data_utils.DataLoader(test, batch_size=batch_size, shuffle=True)
-
-    return train_loader, val_loader#, test_loader
 
 MINI_BATCH_SIZE = 128
 
-train, valid = get_data_loader(MINI_BATCH_SIZE)
+train, valid, test = get_data_loader("datasets/binarized_mnist", MINI_BATCH_SIZE)
 
 #%%
+
+# Based on the "Vanilla VAE code snippet" seen in class: https://chinweihuang.files.wordpress.com/2019/04/vae_lecture_2019_full.pdf
+
 class VAE(nn.Module):
     
     DIMENSION_H = 256
@@ -115,15 +103,15 @@ class VAE(nn.Module):
     # References:
     # https://github.com/pytorch/examples/blob/master/vae/main.py
     # https://github.com/Lasagne/Recipes/blob/master/examples/variational_autoencoder/variational_autoencoder.py
-    def loss_function(self, recon_x, x, mu, log_sigma):
-        BCE = -self.bce(recon_x, x)
+    def loss_function(self, x_, x, mu, log_sigma):
+        BCE = -self.bce(x_.squeeze().view(-1, 784), x.squeeze().view(-1, 784))
         
         KLD = -0.5 * torch.sum(1 + 2 * log_sigma - mu.pow(2) - (2 * log_sigma).exp())
     
         return -(BCE - KLD) / MINI_BATCH_SIZE
 
 
-def evaluate(vae, dataset):
+def evaluate_elbo_loss(vae, dataset): # Per-instance ELBO
     with torch.no_grad():
         vae.eval()
         
@@ -131,14 +119,14 @@ def evaluate(vae, dataset):
         
         total_loss = 0
         
-        for i, (x, y) in enumerate(dataset):
+        for batch_index, batch in enumerate(dataset):
+            x = batch[0]
             if cuda:
                 x = x.cuda()
-                y = y.cuda()
-
-            x_, mu, log_sigma = vae(x.reshape((-1, 1, 28, 28)))
             
-            loss = vae.loss_function(x_.squeeze().view(-1, 784), x.squeeze().view(-1, 784), mu, log_sigma)
+            x_, mu, log_sigma = vae(x)
+            
+            loss = vae.loss_function(x_, x, mu, log_sigma)
             total_loss += loss.item()
             
         return total_loss / mini_batches_count
@@ -153,25 +141,31 @@ if cuda:
 
 for epoch in range(20):
     print('epoch ' + str(epoch))
+    
     vae.train()
-    for i, (x, y) in enumerate(train):
+    
+    for batch_index, batch in enumerate(train):
+        x = batch[0]
         if cuda:
             x = x.cuda()
-            y = y.cuda()
-        x = x.reshape((-1, 1, 28, 28))
+        
         x_, mu, log_sigma = vae(x)
         
-        if i == 0:
+        if batch_index == 0:
+            # Source for reconstructing the image: https://github.com/pytorch/examples/blob/master/vae/main.py
             n = min(x.size(0), 8)
             comparison = torch.cat([x[:n], F.sigmoid(x_[:n])])
             save_image(comparison.cpu(), 'vae_results/reconstruction_' + str(epoch) + '.png', nrow=n)
 
-        loss = vae.loss_function(x_.squeeze().view(-1, 784), x.squeeze().view(-1, 784), mu, log_sigma)
+        loss = vae.loss_function(x_, x, mu, log_sigma)
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
-        if (i + 1) % 100 == 0:
-            print(loss.item())
+        if (batch_index + 1) % 100 == 0:
+            print(-loss.item())
             
-    valid_loss = evaluate(vae, valid)
-    print("Validation loss:", valid_loss)
+    valid_elbo_loss = evaluate_elbo_loss(vae, valid)
+    print("Validation negative ELBO loss:", -valid_elbo_loss)
+    
+    test_elbo_loss = evaluate_elbo_loss(vae, test)
+    print("Test negative ELBO loss:", -test_elbo_loss)
