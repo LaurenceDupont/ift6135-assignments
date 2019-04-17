@@ -123,7 +123,7 @@ def evaluate_elbo_loss(vae, dataset): # Per-instance ELBO
             x = batch[0]
             if cuda:
                 x = x.cuda()
-            
+
             x_, mu, log_sigma = vae(x)
             
             loss = vae.loss_function(x_, x, mu, log_sigma)
@@ -131,6 +131,48 @@ def evaluate_elbo_loss(vae, dataset): # Per-instance ELBO
             
         return total_loss / mini_batches_count
 
+
+def estimate_log_likelihood_minibatch(vae, minibatch, K=200): # K is the number of samples
+    with torch.no_grad():
+        vae.eval()
+        
+        log_likelihoods = []
+    
+        for item in minibatch:
+            x = item
+            if cuda:
+                x = x.cuda()
+    
+            samples_elbos = []
+            
+            for sample_index in range(K):
+                x_, mu, log_sigma = vae(x)
+                                    
+                sample_elbo = -vae.loss_function(x_, x, mu, log_sigma)
+                samples_elbos.append(sample_elbo)
+                
+            samples_elbos = torch.stack(samples_elbos)
+            
+            pi = torch.max(samples_elbos)
+    
+            log_likelihood = pi + torch.log(torch.sum(torch.exp(samples_elbos - pi))) - np.log(K)
+            log_likelihoods.append(log_likelihood.item())
+        
+        return log_likelihoods
+    
+
+def estimate_log_likelihood(vae, dataset):
+    with torch.no_grad():
+        vae.eval()
+        
+        total_log_likelihoods = 0
+        
+        for batch_index, batch in enumerate(dataset):
+                minibatch_log_likelihoods = estimate_log_likelihood_minibatch(vae, batch)
+                total_log_likelihoods += np.sum(minibatch_log_likelihoods)
+        
+        return total_log_likelihoods  / len(dataset)
+    
 
 vae = VAE()
 params = vae.parameters()
@@ -167,5 +209,13 @@ for epoch in range(20):
     valid_elbo_loss = evaluate_elbo_loss(vae, valid)
     print("Validation negative ELBO loss:", -valid_elbo_loss)
     
+    if epoch == 19:
+        valid_log_likelihood = estimate_log_likelihood(vae, valid)
+        print("Validation log likelihood:", valid_log_likelihood)
+    
     test_elbo_loss = evaluate_elbo_loss(vae, test)
     print("Test negative ELBO loss:", -test_elbo_loss)
+    
+    if epoch == 19:
+        test_log_likelihood = estimate_log_likelihood(vae, test)
+        print("Test log likelihood:", test_log_likelihood)
