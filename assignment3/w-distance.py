@@ -40,7 +40,7 @@ class W_Discriminator(nn.Module):
     def gradient_penalty(self, x_real, x_fake):
         alpha = torch.FloatTensor(x_real.size()).uniform_(0, 1).to(DEVICE)
 
-        z = alpha * x_real.detach() + (1 - alpha) * x_fake.detach() # Detach from other graph
+        z = alpha * x_real.detach() + (1 - alpha) * x_fake.detach() # Detach from other forwards
         z.requires_grad_(True)
 
         T_z = self.forward(z) # T(z)
@@ -57,8 +57,8 @@ class W_Discriminator(nn.Module):
 
     def loss_function(self, x_real, x_fake, forward_real, forward_fake):
         
-        forward_real = forward_real.mean()
-        forward_fake = forward_fake.mean()
+        forward_real = forward_real.mean() # Mean over batch examples
+        forward_fake = forward_fake.mean() # Mean over batch examples
 
         gradient_penalty = self.gradient_penalty(x_real, x_fake)
 
