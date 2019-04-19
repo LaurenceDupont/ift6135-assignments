@@ -90,7 +90,7 @@ class W_BaseDiscriminator(nn.Module):
 
 
 class W_NN_Discriminator(W_BaseDiscriminator):
-    def __init__(self, input_size=512, hidden_size=512, lr=1e-3, Lambda=10):
+    def __init__(self, input_size=512, hidden_size=512, lr=1e-4, Lambda=10):
         super(W_NN_Discriminator, self).__init__(Lambda=Lambda)
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -138,13 +138,50 @@ class W_CNN_Discriminator(W_BaseDiscriminator):
         y = self.fc(x)
         return y
 
-
-
+#############################
+## Outputs a 32x32 3-chanel image format
+#############################
 class W_Generator(nn.Module):
     DIMENSION_H = 256
 
     def __init__(self, latent_var_nb=100, lr=1e-4):
         super(W_Generator, self).__init__()
+
+        self.decoder_fc = nn.Linear(latent_var_nb, self.DIMENSION_H)
+
+        self.generator = nn.Sequential(
+            nn.ELU(),
+            
+            nn.Conv2d(256, 64, 5, padding=4),
+            nn.ELU(),
+            
+            nn.UpsamplingBilinear2d(scale_factor=2),
+            nn.Conv2d(64, 32, 3, padding=2),
+            nn.ELU(),
+            
+            nn.UpsamplingBilinear2d(scale_factor=2),
+            nn.Conv2d(32, 16, 3, padding=2),   
+            nn.ELU(),
+            
+            nn.Conv2d(16, 3, 3, padding=4)
+        )
+
+        self.optim = torch.optim.Adam(self.parameters(), lr=lr)
+
+
+    def forward(self, x):
+        x = self.decoder_fc(x).unsqueeze(2).unsqueeze(3)
+        x = self.generator(x)
+        return x
+
+#############################
+## Outputs a 28x28 1-chanel image format
+#############################
+class W_Generator_monocrome_28(nn.Module):
+    DIMENSION_H = 256
+
+    def __init__(self, latent_var_nb=100, lr=1e-4):
+        super(W_Generator_monocrome_28, self).__init__()
 
         self.decoder_fc = nn.Linear(latent_var_nb, self.DIMENSION_H)
         
