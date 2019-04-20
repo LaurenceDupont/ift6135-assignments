@@ -5,6 +5,7 @@ import torchvision.transforms as transforms
 import torch
 import classify_svhn
 from classify_svhn import Classifier
+from scipy import linalg
 
 SVHN_PATH = "svhn"
 PROCESS_BATCH_SIZE = 32
@@ -75,10 +76,16 @@ def calculate_fid_score(sample_feature_iterator,
     """
     To be implemented by you!
     """
-    raise NotImplementedError(
-        "TO BE IMPLEMENTED."
-        "Part of Assignment 3 Quantitative Evaluations"
-    )
+    mu_sample = np.atleast_1d(sample_feature_iterator.mean)
+    mu_test = np.atleast_1d(testset_feature_iterator.mean)
+    covar_sample = np.atleast_2d(sample_feature_iterator.variance)
+    covar_test = np.atleast_2d(testset_feature_iterator.variance)
+
+    diff = mu_test - mu_sample
+    covmean, _ = linalg.sqrtm(covar_test.dot(covar_sample), disp=False)
+    tr_covmean = np.trace(covmean)
+
+    return (diff.dot(diff) + np.trace(covar_test) + np.trace(covar_sample) - 2 * tr_covmean)
 
 
 if __name__ == "__main__":
