@@ -9,6 +9,7 @@ from torch import nn
 from torch.optim import Adam
 from torchvision.utils import save_image
 import torch.nn.functional as F
+import numpy as np
 
 def get_data_loader(dataset_location, batch_size):
     trainvalid = torchvision.datasets.SVHN(
@@ -63,8 +64,6 @@ class VAE(nn.Module):
     def __init__(self):
         super(VAE, self).__init__()
         
-        self.bce = nn.BCEWithLogitsLoss(reduction='sum')
-        
         self.encoder = nn.Sequential(
             nn.Conv2d(3, 32, 9),
             nn.ELU(),
@@ -113,19 +112,31 @@ class VAE(nn.Module):
         q_parameters = self.encoder_fc(self.encoder(x).squeeze())
         mu, log_sigma = q_parameters[:, :self.DIMENSION_Z], q_parameters[:, self.DIMENSION_Z:]
         z = self.reparameterize(mu, log_sigma)
-        x_ = self.decoder(self.decoder_fc(z).unsqueeze(2).unsqueeze(3))
+        decoder_mu = self.decoder(self.decoder_fc(z).unsqueeze(2).unsqueeze(3))
         
-        return x_, mu, log_sigma
+        return decoder_mu, mu, log_sigma
 
     # References:
     # https://github.com/pytorch/examples/blob/master/vae/main.py
     # https://github.com/Lasagne/Recipes/blob/master/examples/variational_autoencoder/variational_autoencoder.py
-    def loss_function(self, x_, x, mu, log_sigma):
-        BCE = -self.bce(x_, x)
+    def loss_function(self, decoder_mu, x, mu, log_sigma):
+        x_reshaped = x.reshape(-1, 3*32*32)
+        decoder_mu_reshaped = decoder_mu.reshape(-1, 3*32*32)
+        mini_batch_size = x_reshaped.size(0)
+
+        # Compute log_px_z: log(N(mean=mu_decoder, covariance=identity))
+        # TODO: optimize the code below
+        sum_log_px_z = 0
         
+        for i in range(mini_batch_size):
+            dot_product = torch.dot((x_reshaped[i] - decoder_mu_reshaped[i]), (x_reshaped[i] - decoder_mu_reshaped[i]))
+            log_px_z = -0.5 * dot_product - (x_reshaped.size(1) / 2) * np.log(2 * np.pi)
+            sum_log_px_z += log_px_z.item()
+        
+        # Compute the KL divergence
         KLD = -0.5 * torch.sum(1 + 2 * log_sigma - mu.pow(2) - (2 * log_sigma).exp())
     
-        return -(BCE - KLD) / MINI_BATCH_SIZE
+        return -(sum_log_px_z - KLD) / mini_batch_size
 
 
 def evaluate_elbo_loss(vae, dataset): # Per-instance ELBO
@@ -141,9 +152,9 @@ def evaluate_elbo_loss(vae, dataset): # Per-instance ELBO
             if cuda:
                 x = x.cuda()
 
-            x_, mu, log_sigma = vae(x)
+            decoder_mu, mu, log_sigma = vae(x)
             
-            loss = vae.loss_function(x_, x, mu, log_sigma)
+            loss = vae.loss_function(decoder_mu, x, mu, log_sigma)
             total_loss += loss.item()
             
         return total_loss / mini_batches_count
@@ -165,15 +176,14 @@ for epoch in range(20):
         if cuda:
             x = x.cuda()
 
-        x_, mu, log_sigma = vae(x)
+        decoder_mu, mu, log_sigma = vae(x)
         
         if batch_index == 0:
-#            # Source for reconstructing the image: https://github.com/pytorch/examples/blob/master/vae/main.py
-            n = min(x.size(0), 8)
-            comparison = torch.cat([x[:n], F.sigmoid(x_[:n])])
-            save_image(comparison.cpu(), 'vae_svhn_results/reconstruction_' + str(epoch) + '.png', nrow=n)
+            normal = torch.distributions.multivariate_normal.MultivariateNormal(decoder_mu[0].reshape(3*32*32), torch.eye(3*32*32).cuda())
+            x_ = normal.sample().reshape(3, 32, 32)
+            save_image(x_, 'vae_svhn_results/reconstruction_' + str(epoch) + '.png')
 
-        loss = vae.loss_function(x_, x, mu, log_sigma)
+        loss = vae.loss_function(decoder_mu, x, mu, log_sigma)
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -183,5 +193,5 @@ for epoch in range(20):
     valid_elbo_loss = evaluate_elbo_loss(vae, valid)
     print("Validation negative ELBO loss:", -valid_elbo_loss)
 
-    test_elbo_loss = evaluate_elbo_loss(vae, test)
-    print("Test negative ELBO loss:", -test_elbo_loss)
+    #test_elbo_loss = evaluate_elbo_loss(vae, test)
+    #print("Test negative ELBO loss:", -test_elbo_loss)
