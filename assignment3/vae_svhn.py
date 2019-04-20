@@ -8,7 +8,6 @@ from torch.utils.data import dataset
 from torch import nn
 from torch.optim import Adam
 from torchvision.utils import save_image
-import torch.nn.functional as F
 
 def get_data_loader(dataset_location, batch_size):
     trainvalid = torchvision.datasets.SVHN(
@@ -63,7 +62,7 @@ class VAE(nn.Module):
     def __init__(self):
         super(VAE, self).__init__()
         
-        self.bce = nn.BCEWithLogitsLoss(reduction='sum')
+        self.MSE = nn.MSELoss(reduction='sum')
         
         self.encoder = nn.Sequential(
             nn.Conv2d(3, 32, 9),
@@ -96,7 +95,8 @@ class VAE(nn.Module):
             nn.Conv2d(32, 16, 3, padding=2),   
             nn.ELU(),
             
-            nn.Conv2d(16, 3, 3, padding=4)
+            nn.Conv2d(16, 3, 3, padding=4),
+            nn.Sigmoid()
         )
         
     def reparameterize(self, mu, log_sigma):
@@ -113,19 +113,26 @@ class VAE(nn.Module):
         q_parameters = self.encoder_fc(self.encoder(x).squeeze())
         mu, log_sigma = q_parameters[:, :self.DIMENSION_Z], q_parameters[:, self.DIMENSION_Z:]
         z = self.reparameterize(mu, log_sigma)
-        x_ = self.decoder(self.decoder_fc(z).unsqueeze(2).unsqueeze(3))
+        decoder_mu = self.decoder(self.decoder_fc(z).unsqueeze(2).unsqueeze(3))
         
-        return x_, mu, log_sigma
+        return decoder_mu, mu, log_sigma
 
     # References:
     # https://github.com/pytorch/examples/blob/master/vae/main.py
     # https://github.com/Lasagne/Recipes/blob/master/examples/variational_autoencoder/variational_autoencoder.py
-    def loss_function(self, x_, x, mu, log_sigma):
-        BCE = -self.bce(x_, x)
+    # https://github.com/1Konny/WAE-pytorch/blob/master/ops.py
+    def loss_function(self, decoder_mu, x, mu, log_sigma):
+        x_reshaped = x.reshape(-1, 3*32*32)
+        decoder_mu_reshaped = decoder_mu.reshape(-1, 3*32*32)
+        mini_batch_size = x_reshaped.size(0)
         
+        # Compute the MSE loss
+        log_px_z = -self.MSE(decoder_mu_reshaped, x_reshaped)
+        
+        # Compute the KL divergence
         KLD = -0.5 * torch.sum(1 + 2 * log_sigma - mu.pow(2) - (2 * log_sigma).exp())
     
-        return -(BCE - KLD) / MINI_BATCH_SIZE
+        return -(log_px_z - KLD) / mini_batch_size
 
 
 def evaluate_elbo_loss(vae, dataset): # Per-instance ELBO
@@ -141,9 +148,9 @@ def evaluate_elbo_loss(vae, dataset): # Per-instance ELBO
             if cuda:
                 x = x.cuda()
 
-            x_, mu, log_sigma = vae(x)
+            decoder_mu, mu, log_sigma = vae(x)
             
-            loss = vae.loss_function(x_, x, mu, log_sigma)
+            loss = vae.loss_function(decoder_mu, x, mu, log_sigma)
             total_loss += loss.item()
             
         return total_loss / mini_batches_count
@@ -165,15 +172,14 @@ for epoch in range(20):
         if cuda:
             x = x.cuda()
 
-        x_, mu, log_sigma = vae(x)
+        decoder_mu, mu, log_sigma = vae(x)
         
         if batch_index == 0:
-#            # Source for reconstructing the image: https://github.com/pytorch/examples/blob/master/vae/main.py
             n = min(x.size(0), 8)
-            comparison = torch.cat([x[:n], F.sigmoid(x_[:n])])
+            comparison = torch.cat([x[:n], decoder_mu[:n]])
             save_image(comparison.cpu(), 'vae_svhn_results/reconstruction_' + str(epoch) + '.png', nrow=n)
 
-        loss = vae.loss_function(x_, x, mu, log_sigma)
+        loss = vae.loss_function(decoder_mu, x, mu, log_sigma)
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -182,6 +188,3 @@ for epoch in range(20):
             
     valid_elbo_loss = evaluate_elbo_loss(vae, valid)
     print("Validation negative ELBO loss:", -valid_elbo_loss)
-
-    test_elbo_loss = evaluate_elbo_loss(vae, test)
-    print("Test negative ELBO loss:", -test_elbo_loss)
