@@ -95,7 +95,8 @@ class VAE(nn.Module):
             nn.Conv2d(32, 16, 3, padding=2),   
             nn.ELU(),
             
-            nn.Conv2d(16, 3, 3, padding=4)
+            nn.Conv2d(16, 3, 3, padding=4),
+            nn.Sigmoid()
         )
         
     def reparameterize(self, mu, log_sigma):
@@ -123,20 +124,14 @@ class VAE(nn.Module):
         x_reshaped = x.reshape(-1, 3*32*32)
         decoder_mu_reshaped = decoder_mu.reshape(-1, 3*32*32)
         mini_batch_size = x_reshaped.size(0)
-
-        # Compute log_px_z: log(N(mean=mu_decoder, covariance=identity))
-        # TODO: optimize the code below
-        sum_log_px_z = 0
         
-        for i in range(mini_batch_size):
-            dot_product = torch.dot((x_reshaped[i] - decoder_mu_reshaped[i]), (x_reshaped[i] - decoder_mu_reshaped[i]))
-            log_px_z = -0.5 * dot_product - (x_reshaped.size(1) / 2) * np.log(2 * np.pi)
-            sum_log_px_z += log_px_z.item()
+        # Reference: https://github.com/1Konny/WAE-pytorch/blob/master/ops.py
+        log_px_z = -F.mse_loss(decoder_mu_reshaped, x_reshaped, size_average=False)
         
         # Compute the KL divergence
         KLD = -0.5 * torch.sum(1 + 2 * log_sigma - mu.pow(2) - (2 * log_sigma).exp())
     
-        return -(sum_log_px_z - KLD) / mini_batch_size
+        return -(log_px_z - KLD) / mini_batch_size
 
 
 def evaluate_elbo_loss(vae, dataset): # Per-instance ELBO
@@ -179,9 +174,12 @@ for epoch in range(20):
         decoder_mu, mu, log_sigma = vae(x)
         
         if batch_index == 0:
-            normal = torch.distributions.multivariate_normal.MultivariateNormal(decoder_mu[0].reshape(3*32*32), torch.eye(3*32*32).cuda())
-            x_ = normal.sample().reshape(3, 32, 32)
-            save_image(x_, 'vae_svhn_results/reconstruction_' + str(epoch) + '.png')
+#            normal = torch.distributions.multivariate_normal.MultivariateNormal(decoder_mu[0].reshape(3*32*32), torch.eye(3*32*32).cuda())
+#            x_ = normal.sample().reshape(3, 32, 32)
+#            save_image(x_, 'vae_svhn_results/reconstruction_' + str(epoch) + '.png')
+            n = min(x.size(0), 8)
+            comparison = torch.cat([x[:n], decoder_mu[:n]])
+            save_image(comparison.cpu(), 'vae_svhn_results/reconstruction_' + str(epoch) + '.png', nrow=n)
 
         loss = vae.loss_function(decoder_mu, x, mu, log_sigma)
         loss.backward()
