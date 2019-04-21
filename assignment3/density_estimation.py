@@ -1,15 +1,15 @@
+
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """
 Created on Sat Mar 23 13:20:15 2019
-
 @author: chin-weihuang
 """
 
 
 from __future__ import print_function
 import numpy as np
-import torch 
+import torch
 import matplotlib.pyplot as plt
 
 # plot p0 and p1
@@ -29,11 +29,13 @@ plt.plot(f(torch.from_numpy(xx)).numpy(), d(torch.from_numpy(xx)).numpy()**(-1)*
 plt.plot(xx, N(xx))
 plt.show()
 
-############### import the sampler ``samplers.distribution4'' 
+############### import the sampler ``samplers.distribution4''
 ############### train a discriminator on distribution4 and standard gaussian
 ############### estimate the density of distribution4
 
 #######--- INSERT YOUR CODE BELOW ---#######
+
+=======
 import math
 import assignment3.samplers as samplers
 from torch.optim.sgd import SGD
@@ -130,14 +132,4 @@ plt.plot(f(torch.from_numpy(xx)).numpy(), d(torch.from_numpy(xx)).numpy()**(-1)*
 plt.legend(['Estimated','True'])
 plt.title('Estimated vs True')
 plt.show()
-
-
-
-
-
-
-
-
-
-
 
