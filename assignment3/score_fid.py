@@ -6,6 +6,7 @@ import torch
 import classify_svhn
 from classify_svhn import Classifier
 from scipy import linalg
+import numpy as np
 
 SVHN_PATH = "svhn"
 PROCESS_BATCH_SIZE = 32
@@ -25,12 +26,19 @@ def get_sample_loader(path, batch_size):
     Returns an iterator over the tensors of the images
     of dimension (batch_size, 3, 32, 32)
     """
-    data = torchvision.datasets.ImageFolder(
-        path,
-        transform=transforms.Compose([
-            transforms.Resize((32, 32), interpolation=2),
-            classify_svhn.image_transform
-        ])
+    # TODO : Change it back to image samples
+    # data = torchvision.datasets.ImageFolder(
+    #     path,
+    #     transform=transforms.Compose([
+    #         transforms.Resize((32, 32), interpolation=2),
+    #         classify_svhn.image_transform
+    #     ])
+    # )
+    # Just use this to test FID score (should be = 0)
+    data = torchvision.datasets.SVHN(
+        SVHN_PATH, split='test',
+        download=True,
+        transform=classify_svhn.image_transform
     )
     data_loader = torch.utils.data.DataLoader(
         data,
@@ -72,20 +80,36 @@ def extract_features(classifier, data_loader):
 
 
 def calculate_fid_score(sample_feature_iterator,
-                        testset_feature_iterator):
-    """
-    To be implemented by you!
-    """
-    mu_sample = np.atleast_1d(sample_feature_iterator.mean)
-    mu_test = np.atleast_1d(testset_feature_iterator.mean)
-    covar_sample = np.atleast_2d(sample_feature_iterator.variance)
-    covar_test = np.atleast_2d(testset_feature_iterator.variance)
+                        testset_feature_iterator, nb_images):
+    '''
+    Implementation of the Frechet Distance
+
+    :param sample_feature_iterator:
+    :param testset_feature_iterator:
+    :param nb_images: number of images to calculate the score on
+    :return: FID score on all the images
+    '''
+    FID_score = np.ones(nb_images)
+
+    iter_sample = iter(sample_feature_iterator)
+    iter_test = iter(testset_feature_iterator)
+    samples = []
+    tests = []
+    for image in range(nb_images):
+        samples.append(next(iter_sample))
+        tests.append(next(iter_test))
+
+    mu_sample = np.mean(samples, axis=0)
+    mu_test = np.mean(tests, axis=0)
+    covar_sample = np.cov(samples, rowvar=False)
+    covar_test = np.cov(tests, rowvar=False)
 
     diff = mu_test - mu_sample
     covmean, _ = linalg.sqrtm(covar_test.dot(covar_sample), disp=False)
     tr_covmean = np.trace(covmean)
+    FID_score[image] = (diff.dot(diff) + np.trace(covar_test) + np.trace(covar_sample) - 2 * tr_covmean)
 
-    return (diff.dot(diff) + np.trace(covar_test) + np.trace(covar_sample) - 2 * tr_covmean)
+    return np.sum(FID_score)
 
 
 if __name__ == "__main__":
@@ -117,5 +141,5 @@ if __name__ == "__main__":
     test_loader = get_test_loader(PROCESS_BATCH_SIZE)
     test_f = extract_features(classifier, test_loader)
 
-    fid_score = calculate_fid_score(sample_f, test_f)
+    fid_score = calculate_fid_score(sample_f, test_f, nb_images=10)
     print("FID score:", fid_score)
