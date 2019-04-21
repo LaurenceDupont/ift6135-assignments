@@ -12,6 +12,7 @@ from torch.optim import Adam
 from torch.nn import functional as F
 from torchvision.utils import save_image
 from w_gan_model import *
+import w_gan_model
 
 #%%
 ######################
@@ -27,8 +28,8 @@ class GanTrainner():
         self.discriminator_input_size = 784
 
     def rand_noise(self, batch_size):
-        #e= torch.FloatTensor((batch_size, LATENT_VAR_NB)).normal_(0, 1).to(DEVICE)
-        e = torch.randn(batch_size, self.LATENT_VAR_NB).to(DEVICE)
+        e= torch.FloatTensor(batch_size, self.LATENT_VAR_NB).normal_(0, 1).to(DEVICE)
+        #e = torch.randn(batch_size, self.LATENT_VAR_NB).to(DEVICE)
         #e = torch.randn(MINI_BATCH_SIZE, IMAGE_SIZE*2)
         return e
 
@@ -42,14 +43,29 @@ class GanTrainner():
         save_image(comparison.cpu(), './gan_results/reconstruction_' + str(itr) + '.png', nrow=n)
 
 
+    def generate_image_from_saved_model(self, model_name, class_name):
+        Generator = getattr(w_gan_model, class_name)()
+        Generator.load_state_dict(torch.load("./saved_models/" + model_name))
+        Generator.to(DEVICE)
+        Generator.eval()
+        
+        self.gen_img(Generator, -1)
+
     ######################
     ## Train
     ## inspired from https://github.com/jalola/improved-wgan-pytorch/blob/master/gan_train.py
     ######################
-    def start(self, train, BATCH_SIZE, NB_TRAIN_LOOPS=10001, mnist=False):
+    def start(self, train, BATCH_SIZE, NB_TRAIN_LOOPS=10001, mnist=False, save_name="w_gan_generator"):
         Crit = W_NN_Discriminator(input_size=self.discriminator_input_size).to(DEVICE)
-        #Crit = W_CNN_Discriminator(isBlackAndWhite=True).to(DEVICE)
-        Gen = W_Generator(latent_var_nb=self.LATENT_VAR_NB) if not mnist else W_Generator_monocrome_28(latent_var_nb=self.LATENT_VAR_NB) 
+        #Crit = W_CNN_Discriminator(feature_dim=32).to(DEVICE)
+        #Crit = W_Online2_Discriminator().to(DEVICE)
+        #Crit = W_Online3_Discriminator().to(DEVICE)
+
+        #Gen = W_Generator(latent_var_nb=self.LATENT_VAR_NB) if not mnist else W_Generator_monocrome_28(latent_var_nb=self.LATENT_VAR_NB) 
+        Gen = W_Online_Generator(latent_var_nb=self.LATENT_VAR_NB)
+        #Gen = W_Online2_Generator(latent_var_nb=self.LATENT_VAR_NB)
+        #Gen = W_Online3_Generator()
+
         Gen = Gen.to(DEVICE)
         mone = torch.FloatTensor([-1]).to(DEVICE)
         data_iter = iter(train)
@@ -124,6 +140,8 @@ class GanTrainner():
                 print(f"Loss: {loss.item()}, WD: { WD.item()}")
             if (i_val % 100 == 0):
                 self.gen_img(Gen, i_val)
+            if (i_val % 500 == 0):
+                torch.save(Gen.state_dict(), "./saved_models/" + save_name+ "_" + str(i_val) + ".pt")
             i_val += 1
 
 

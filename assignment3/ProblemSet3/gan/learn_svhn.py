@@ -52,6 +52,8 @@ if __name__ == "__main__":
     #######################
     ## Train
     #######################
-    ganTrainner = GanTrainner(NB_ITR_CRITIC=7)
-    ganTrainner.discriminator_input_size = 3072
-    Gen, Crit = ganTrainner.start(train, BATCH_SIZE, NB_TRAIN_LOOPS=100001)
+    ganTrainner = GanTrainner(NB_ITR_CRITIC=5, NB_ITR_GENERATOR=1)
+    ganTrainner.discriminator_input_size = 3072 # 3*32*32
+    Gen, Crit = ganTrainner.start(train, BATCH_SIZE, NB_TRAIN_LOOPS=200001, save_name="w-gan-gp_Online3_Generator")
+
+    #ganTrainner.generate_image_from_saved_model("w-gan-gp_Online3_Generator_61500.pt", "W_Online3_Generator")
