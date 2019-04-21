@@ -27,19 +27,19 @@ def get_sample_loader(path, batch_size):
     of dimension (batch_size, 3, 32, 32)
     """
     # TODO : Change it back to image samples
-    # data = torchvision.datasets.ImageFolder(
-    #     path,
-    #     transform=transforms.Compose([
-    #         transforms.Resize((32, 32), interpolation=2),
-    #         classify_svhn.image_transform
-    #     ])
-    # )
-    # Just use this to test FID score (should be = 0)
-    data = torchvision.datasets.SVHN(
-        SVHN_PATH, split='test',
-        download=True,
-        transform=classify_svhn.image_transform
+    data = torchvision.datasets.ImageFolder(
+        path,
+        transform=transforms.Compose([
+            transforms.Resize((32, 32), interpolation=2),
+            classify_svhn.image_transform
+        ])
     )
+    # Just use this to test FID score (should be = 0)
+    # data = torchvision.datasets.SVHN(
+    #     SVHN_PATH, split='test',
+    #     download=True,
+    #     transform=classify_svhn.image_transform
+    # )
     data_loader = torch.utils.data.DataLoader(
         data,
         batch_size=batch_size,
@@ -79,8 +79,8 @@ def extract_features(classifier, data_loader):
                 yield h[i]
 
 
-def calculate_fid_score(sample_feature_iterator,
-                        testset_feature_iterator, nb_images):
+# Inspired from https://github.com/mseitzer/pytorch-fid/blob/master/fid_score.py
+def calculate_fid_score(sample_feature_iterator, testset_feature_iterator, nb_images, eps=1e-6):
     '''
     Implementation of the Frechet Distance
 
@@ -101,11 +101,27 @@ def calculate_fid_score(sample_feature_iterator,
 
     mu_sample = np.mean(samples, axis=0)
     mu_test = np.mean(tests, axis=0)
-    covar_sample = np.cov(samples)
-    covar_test = np.cov(tests)
+    covar_sample = np.cov(samples, rowvar=False)
+    covar_test = np.cov(tests, rowvar=False)
 
     diff = mu_test - mu_sample
     covmean, _ = linalg.sqrtm(covar_test.dot(covar_sample), disp=False)
+
+    # Product might be almost singular
+    if not np.isfinite(covmean).all():
+        msg = ('fid calculation produces singular product; '
+               'adding %s to diagonal of cov estimates') % eps
+        print(msg)
+        offset = np.eye(covar_sample.shape[0]) * eps
+        covmean = linalg.sqrtm((covar_sample + offset).dot(covar_test + offset))
+
+    # Numerical error might give slight imaginary component
+    if np.iscomplexobj(covmean):
+        if not np.allclose(np.diagonal(covmean).imag, 0, atol=1e-3):
+            m = np.max(np.abs(covmean.imag))
+            raise ValueError('Imaginary component {}'.format(m))
+        covmean = covmean.real
+
     tr_covmean = np.trace(covmean)
     FID_score = (diff.dot(diff) + np.trace(covar_test) + np.trace(covar_sample) - 2 * tr_covmean)
 
@@ -141,5 +157,5 @@ if __name__ == "__main__":
     test_loader = get_test_loader(PROCESS_BATCH_SIZE)
     test_f = extract_features(classifier, test_loader)
 
-    fid_score = calculate_fid_score(sample_f, test_f, nb_images=10)
+    fid_score = calculate_fid_score(sample_f, test_f, nb_images=1000)
     print("FID score:", fid_score)
