@@ -8,6 +8,17 @@ from torch import autograd
 import torch.nn.functional as F
 import numpy as np
 
+
+#################################################################################
+##  This File contains different implementations of the Discriminators and 
+##  Generators that can be used for training. The class 'W_BaseDiscriminator'
+##  is the base class containing the w-gan-gp loss fonction. The other discriminator
+##  simply need to inherit this and implement their own forward pass. The file
+##  'train.py' contains a class to train these different models. Simple interchange them 
+##  in the method 'start()' to train a different GAN architecture. 
+#################################################################################
+
+
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #%%
 
