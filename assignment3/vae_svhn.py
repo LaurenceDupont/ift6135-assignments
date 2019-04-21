@@ -58,11 +58,14 @@ class VAE(nn.Module):
     
     DIMENSION_H = 256
     DIMENSION_Z = 100
+    DIM = 128
     
     def __init__(self):
         super(VAE, self).__init__()
         
         self.MSE = nn.MSELoss(reduction='sum')
+        
+        # Encoder
         
         self.encoder = nn.Sequential(
             nn.Conv2d(3, 32, 9),
@@ -79,25 +82,38 @@ class VAE(nn.Module):
         
         self.encoder_fc = nn.Linear(self.DIMENSION_H, self.DIMENSION_Z * 2)
         
-        self.decoder_fc = nn.Linear(self.DIMENSION_Z, self.DIMENSION_H)
-
-        self.decoder = nn.Sequential(
-            nn.ELU(),
-            
-            nn.Conv2d(256, 64, 5, padding=4),
-            nn.ELU(),
-            
-            nn.UpsamplingBilinear2d(scale_factor=2),
-            nn.Conv2d(64, 32, 3, padding=2),
-            nn.ELU(),
-            
-            nn.UpsamplingBilinear2d(scale_factor=2),
-            nn.Conv2d(32, 16, 3, padding=2),   
-            nn.ELU(),
-            
-            nn.Conv2d(16, 3, 3, padding=4),
-            nn.Sigmoid()
+        # Decoder
+        
+        self.preprocess = nn.Sequential(
+            nn.Linear(self.DIMENSION_Z, 4 * 4 * 4 * self.DIM),
+            nn.ReLU(True),
         )
+        
+        self.block1 = nn.Sequential(
+            nn.ConvTranspose2d(4 * self.DIM, 2 * self.DIM, 2, stride=2),
+            nn.BatchNorm2d(2 * self.DIM),
+            nn.ReLU(True),
+        )
+       
+        self.block2 = nn.Sequential(
+            nn.ConvTranspose2d(2 * self.DIM, self.DIM, 2, stride=2),
+            nn.BatchNorm2d(self.DIM),
+            nn.ReLU(True),
+        )
+        
+        self.deconv_out = nn.ConvTranspose2d(self.DIM, 3, 2, stride=2)
+        self.sig = nn.Sigmoid()
+   
+    
+    def decode(self, z):
+        output = self.preprocess(z)
+        output = output.view(-1, 4 * self.DIM, 4, 4)
+        output = self.block1(output)
+        output = self.block2(output)
+        output = self.deconv_out(output)
+        output = self.sig(output)
+        return output.view(-1, 3, 32, 32)
+    
         
     def reparameterize(self, mu, log_sigma):
         sigma = torch.exp(log_sigma) + 1e-7
@@ -113,7 +129,7 @@ class VAE(nn.Module):
         q_parameters = self.encoder_fc(self.encoder(x).squeeze())
         mu, log_sigma = q_parameters[:, :self.DIMENSION_Z], q_parameters[:, self.DIMENSION_Z:]
         z = self.reparameterize(mu, log_sigma)
-        decoder_mu = self.decoder(self.decoder_fc(z).unsqueeze(2).unsqueeze(3))
+        decoder_mu = self.decode(z)
         
         return decoder_mu, mu, log_sigma
 
