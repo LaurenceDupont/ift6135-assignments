@@ -101,15 +101,15 @@ def calculate_fid_score(sample_feature_iterator,
 
     mu_sample = np.mean(samples, axis=0)
     mu_test = np.mean(tests, axis=0)
-    covar_sample = np.cov(samples, rowvar=False)
-    covar_test = np.cov(tests, rowvar=False)
+    covar_sample = np.cov(samples)
+    covar_test = np.cov(tests)
 
     diff = mu_test - mu_sample
     covmean, _ = linalg.sqrtm(covar_test.dot(covar_sample), disp=False)
     tr_covmean = np.trace(covmean)
-    FID_score[image] = (diff.dot(diff) + np.trace(covar_test) + np.trace(covar_sample) - 2 * tr_covmean)
+    FID_score = (diff.dot(diff) + np.trace(covar_test) + np.trace(covar_sample) - 2 * tr_covmean)
 
-    return np.sum(FID_score)
+    return FID_score
 
 
 if __name__ == "__main__":
