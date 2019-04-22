@@ -26,7 +26,6 @@ def get_sample_loader(path, batch_size):
     Returns an iterator over the tensors of the images
     of dimension (batch_size, 3, 32, 32)
     """
-    # TODO : Change it back to image samples
     data = torchvision.datasets.ImageFolder(
         path,
         transform=transforms.Compose([
@@ -34,12 +33,6 @@ def get_sample_loader(path, batch_size):
             classify_svhn.image_transform
         ])
     )
-    # Just use this to test FID score (should be = 0)
-    # data = torchvision.datasets.SVHN(
-    #     SVHN_PATH, split='test',
-    #     download=True,
-    #     transform=classify_svhn.image_transform
-    # )
     data_loader = torch.utils.data.DataLoader(
         data,
         batch_size=batch_size,
