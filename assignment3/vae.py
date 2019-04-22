@@ -104,11 +104,13 @@ class VAE(nn.Module):
     # https://github.com/pytorch/examples/blob/master/vae/main.py
     # https://github.com/Lasagne/Recipes/blob/master/examples/variational_autoencoder/variational_autoencoder.py
     def loss_function(self, x_, x, mu, log_sigma):
+        mini_batch_size = x_.size(0)
+        
         BCE = -self.bce(x_.squeeze().view(-1, 784), x.squeeze().view(-1, 784))
         
         KLD = -0.5 * torch.sum(1 + 2 * log_sigma - mu.pow(2) - (2 * log_sigma).exp())
     
-        return -(BCE - KLD) / MINI_BATCH_SIZE
+        return -(BCE - KLD) / mini_batch_size
 
 
 def evaluate_elbo_loss(vae, dataset): # Per-instance ELBO
@@ -207,14 +209,14 @@ for epoch in range(20):
             print(-loss.item())
             
     valid_elbo_loss = evaluate_elbo_loss(vae, valid)
-    print("Validation negative ELBO loss:", -valid_elbo_loss)
+    print("Validation ELBO loss:", -valid_elbo_loss)
     
     if epoch == 19:
         valid_log_likelihood = estimate_log_likelihood(vae, valid)
         print("Validation log likelihood:", valid_log_likelihood)
     
     test_elbo_loss = evaluate_elbo_loss(vae, test)
-    print("Test negative ELBO loss:", -test_elbo_loss)
+    print("Test ELBO loss:", -test_elbo_loss)
     
     if epoch == 19:
         test_log_likelihood = estimate_log_likelihood(vae, test)
