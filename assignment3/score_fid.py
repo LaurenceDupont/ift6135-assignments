@@ -89,7 +89,6 @@ def calculate_fid_score(sample_feature_iterator, testset_feature_iterator, nb_im
     :param nb_images: number of images to calculate the score on
     :return: FID score on all the images
     '''
-    FID_score = np.ones(nb_images)
 
     iter_sample = iter(sample_feature_iterator)
     iter_test = iter(testset_feature_iterator)
